@@ -30,7 +30,9 @@ renderView1.Update()
 threshold1 = Threshold(Input=cellSize1)
 threshold1.Scalars = ['CELLS', 'Area']
 valuemax = cellSize1.GetCellDataInformation().GetArray('Area').GetRange()[1]
-threshold1.ThresholdRange = [0.000001, valuemax]
+threshold1.LowerThreshold = 0.000001
+threshold1.UpperThreshold = valuemax
+threshold1.ThresholdMethod = 'Between'
 threshold1Display = Show(threshold1, renderView1)
 renderView1.Update()
 extractSurface1 = ExtractSurface(Input=threshold1)

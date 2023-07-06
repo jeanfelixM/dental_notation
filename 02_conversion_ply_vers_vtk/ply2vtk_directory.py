@@ -22,9 +22,9 @@ from os import system, path, rename, remove
 
 def ply2vtk():
     # pvpython path
-    pvpython_path = "D:/programmesD/ParaView 5.10.1-Windows-Python3.9-msvc2017-AMD64/bin/pvpython.exe"
+    pvpython_path = "C:/Program Files/ParaView 5.11.1/bin/pvpython.exe"
     # Parview script
-    script_path = 'ply2vtk_script.py'
+    script_path = '02_conversion_ply_vers_vtk/ply2vtk_script.py'
     # window for choosing a directory
     root = Tk()
     root.withdraw()  # use to hide tkinter window
