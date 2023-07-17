@@ -12,6 +12,7 @@ import numpy as np
 
 paraview.simple._DisableFirstRenderCameraReset()
 filename1 = sys.argv[1]
+print("filename : " + filename1)
 base = sys.argv[2]
 vtk_file1 = LegacyVTKReader(FileNames=filename1)
 output_directory = sys.argv[3]

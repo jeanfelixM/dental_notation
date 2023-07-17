@@ -41,7 +41,7 @@ def add_colormap_source(path_name, prefix, number_of_timepoints, flag_all=1):
     for k in range(1, number_of_timepoints):
         d = d + np.sqrt(np.sum((expected[k] - expected[k - 1]) ** 2, axis=1))
     surface.scalars = d
-    surface.write(path_name / 'colormaps', prefix + '%d.vtk' % 0)
+    surface.write(path_name / 'colormaps', prefix + '%d.vtk' % 100)
 
 
 

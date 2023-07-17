@@ -8,7 +8,7 @@ import csv
 from os import path
 from pathlib import Path
 import time
-from memory_profiler import profile
+
 
 
 from scipy.spatial import cKDTree
@@ -19,7 +19,7 @@ def minimal_distances_points_to_surface2(points, meshvertices):
     return d
 
     
-@profile
+#@profile
 def select_and_align(pointsFile=None, surfaceFile=None, surfaceFileCut=None):
     with open(pointsFile,'r') as f:
         points = list(csv.reader(f, delimiter=" "))

@@ -15,7 +15,7 @@ The VTK files are written in the folder containing the PLY files.
 from pathlib import Path
 from tkinter import filedialog
 from tkinter import *
-from os import system, path, rename, remove
+from os import path, rename, remove
 
 from ply2vtk import filter_and_rewrite
 

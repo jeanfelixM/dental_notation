@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import copy
 import open3d as o3d
@@ -9,6 +10,7 @@ from os import path, system
 from pathlib import Path
 import vtk
 from vtk.util.numpy_support import vtk_to_numpy
+from scipy.spatial.distance import cdist
 import numpy as np
 from landmarkscalar import LandmarkScalar
 from deformetrica.in_out.array_readers_and_writers import read_3D_array, read_2D_array
@@ -42,53 +44,116 @@ def getvolumeVTK(filename):
     Mass.Update()
     return Mass.GetVolume()
 
-# def renderVTK(filename):
-#     colors = vtk.vtkNamedColors()
-#     import vtk
-#
-#     # Read the source file.
-#     reader = vtk.vtkPolyDataReader()
-#     reader.SetFileName(filename)
-#     reader.Update()
-#
-#     mapper = vtk.vtkPolyDataMapper()
-#     mapper.SetInputConnection(reader.GetOutputPort())
-#
-#     actor = vtk.vtkActor()
-#     actor.SetMapper(mapper)
-#     # actor.GetProperty().SetColor(colors.GetColor3d('scalars'))
-#
-#     # Create a rendering window and renderer
-#     ren = vtk.vtkRenderer()
-#     renWin = vtk.vtkRenderWindow()
-#     renWin.AddRenderer(ren)
-#     renWin.SetWindowName('ReadVTK')
-#
-#     # Create a renderwindowinteractor
-#     # iren = vtk.vtkRenderWindowInteractor()
-#     # iren.SetRenderWindow(renWin)
-#
-#     # Assign actor to the renderer
-#     ren.AddActor(actor)
-#
-#     # Enable user interface interactor
-#     # iren.Initialize()
-#     renWin.Render()
-#
-#     ren.SetBackground(colors.GetColor3d('White'))
-#     # ren.GetActiveCamera().SetPosition(-0.5, 0.1, 0.0)
-#     # ren.GetActiveCamera().SetViewUp(0.1, 0.0, 1.0)
-#     # renWin.Render()
-#     # iren.Start()
+
+def regularity_calc(control_points,momenta,kwidth):
+    CPx = np.tile(control_points[:, 0], [int(momenta.shape[0] / 3), 1])
+    CPy = np.tile(control_points[:, 1], [int(momenta.shape[0] / 3), 1])
+    CPz = np.tile(control_points[:, 2], [int(momenta.shape[0] / 3), 1])
+    K = np.exp(-(np.square(CPx - np.transpose(CPx)) + np.square(CPy - np.transpose(CPy)) + np.square(
+    CPz - np.transpose(CPz))) / np.square(kwidth))
+    print("K.shape : " + str(K.shape))
+    V1 = np.matmul(K, momenta[0:len(momenta):3])
+    V2 = np.matmul(K, momenta[1:len(momenta):3])
+    V3 = np.matmul(K, momenta[2:len(momenta):3])
+    V = np.zeros((len(momenta)))
+    V[0:len(momenta):3] = V1
+    V[1:len(momenta):3] = V2
+    V[2:len(momenta):3] = V3
+    return np.matmul(momenta, V)
+
+def regularity_calc2(control_points,momenta,kwidth):
+    m = momenta.reshape(-1, 3)
+    distances = cdist(control_points, control_points)
+    K = np.exp(-distances**2 / kwidth**2)
+    V = np.matmul(K, m) #(X(C1)...X(Ci)...X(Cn)) * (m1...mi...mn)
+    R = np.matmul(np.transpose(m), V)
+    regularity = np.trace(R)
+    return regularity
+#En résumé, mT.K.m (et en particulier la somme de sa diagonale) est une mesure de la façon dont les momenta originaux sont "en phase" avec le champ vectoriel interpolé. Une valeur plus élevée indique une plus grande "régularité" de la transformation, c'est-à-dire que les momenta originaux et le champ vectoriel interpolé sont plus alignés. C'est une mesure de la qualité de la transformation.
 
 
-if __name__ == '__main__':
-    input_directory = 'E:/work_new/En_cours_new/etudiants/Antoine/notation_dents_protocole_test/data/calcul/input'
-    reference_surface = "26-D2_1-20_prep_001.vtk"
-    t = np.loadtxt("E:/work_new/En_cours_new/etudiants/Antoine/notation_dents_protocole_test/data/26-D2_1-20_prep/translations.csv", delimiter=";")
-    pvpython_path = "C:/Program Files/ParaView 5.4.0-RC3-Qt5-OpenGL2-Windows-64bit/bin/pvpython.exe"
-    # Parview script
-    script_path = 'E:/work_new/En_cours_new/etudiants/Antoine/notation_dents_protocole_test/03_deformetrica/screenshot_script.py'
+def deformation_read(dirname,dirnames,cpt):
+    print("Surface %d / %d \n" % (cpt + 1, len(dirnames)))
+    root_directory = Path(dirname)
+    xml_parameters = XmlParameters()
+    xml_parameters.read_all_xmls(root_directory / 'model.xml', root_directory / 'data_set.xml', root_directory /
+                                         '../../optimization_parameters.xml', root_directory / 'output')
+
+    momenta = read_3D_array(root_directory / 'output' / 'DeterministicAtlas__EstimatedParameters__Momenta.txt')
+    momenta = momenta.flatten()
+    control_points = read_2D_array(
+        root_directory / 'output' / 'DeterministicAtlas__EstimatedParameters__ControlPoints.txt')
+    
+    return momenta,control_points,xml_parameters
+
+def update_mesh(pcd, points,translation, cpt):
+    nb = np.asarray(pcd.vertices).shape[0]
+    for point in points:
+        pcd.vertices.append(point - translation[cpt+1][1:4])
+    return pcd, nb
+
+def update_faces(pcd, faces, nb):
+    faces = faces + nb
+    faces = np.concatenate((np.asarray(pcd.triangles), faces), axis=0)
+    pcd.triangles = o3d.utility.Vector3iVector(faces)
+    return pcd,faces
+
+def read_and_volume(filename):
+    points, faces, scalars = readVTK(filename)
+    volume = getvolumeVTK(filename)
+    return points, faces, scalars, volume
+
+
+def takeScreenshot():
+    return
+    # Windows
+    #system('" "' + pvpython_path + '" "' + script_path + '" "' + filename + '" "' + bn + '" "' + screenshotOutput + '" "' + str(valmax) + '" "')
+	# OSX
+    # system(pvpython_path+  ' ' + script_path + ' ' + filename + ' ' + bn + ' ' + screenshotOutput + ' ' + str(valmax))
+            
+
+def take_screenshot(pointsBase,facesBase,scalarsBase, base, output_directory):
+    print("a")
+    pb = np.array(pointsBase)
+    fb = np.array(facesBase)
+    sb = np.array(scalarsBase)
+
+    # Création du maillage
+    mesh = o3d.geometry.PointCloud()
+
+    # Remplissage du maillage avec les points et les faces
+    mesh.points = o3d.utility.Vector3dVector(pb)
+
+
+    # Créez un visualiseur
+    renderer = o3d.visualization.Visualizer()
+    renderer.create_window(visible=False)  # Crée une fenêtre invisible
+    renderer.add_geometry(mesh)  # Ajoute le nuage de points à la fenêtre
+
+    
+    
+    #camera = renderer.scene.add_perspective_camera("camera", fov_deg = 90)  # replace fov_deg with your camera FOV
+    #renderer.scene.set_active_camera("camera")
+
+    # Set camera pose (extrinsic matrix)
+    # For the -Z view
+    #camera_pose = np.array([
+     #   [1, 0, 0, 0],
+      #  [0, 1, 0, 0],
+       # [0, 0, 1, 2],
+        #[0, 0, 0, 1]])
+    #renderer.scene.set_camera_pose("camera", camera_pose)
+
+    # Faites le rendu de l'image
+    #renderer.update_geometry()
+    #renderer.poll_events()
+    renderer.update_renderer()
+    
+    # Render and save image
+    img = renderer.capture_screen_float_buffer(False)
+    o3d.io.write_image(os.path.join(output_directory, base + '_occlusal.png'), img)
+
+def postprocess(input_directory,reference_surface,translation,pvpython_path,script_path):
     dirnames = list(Path(input_directory).glob('*'))
     pcd = o3d.geometry.TriangleMesh()
     pcdBase = o3d.geometry.TriangleMesh()
@@ -108,7 +173,7 @@ if __name__ == '__main__':
     for dirname in dirnames:
         if path.isdir(dirname):
             filename = path.join(dirname, "output", "colormaps",
-                                 "DeterministicAtlas__flow__tooth__subject_subj1__tp_0.vtk")
+                                 "DeterministicAtlas__flow__tooth__subject_subj1__tp_100.vtk")
             pointsBase, facesBase, scalarsBase = readVTK(filename)
             valtmp = np.max(scalarsBase)
             if valtmp > valmax:
@@ -119,65 +184,41 @@ if __name__ == '__main__':
         if path.isdir(dirname):
             bn = path.basename(dirname)
 
-            print("Surface %d / %d \n" % (cpt + 1, len(dirnames)))
-            root_directory = Path(dirname)
-            xml_parameters = XmlParameters()
-            xml_parameters.read_all_xmls(root_directory / 'model.xml', root_directory / 'data_set.xml', root_directory /
-                                         '../../optimization_parameters.xml', root_directory / 'output')
-
-            momenta = read_3D_array(root_directory / 'output' / 'DeterministicAtlas__EstimatedParameters__Momenta.txt')
-            momenta = momenta.flatten()
-            control_points = read_2D_array(
-                root_directory / 'output' / 'DeterministicAtlas__EstimatedParameters__ControlPoints.txt')
+            momenta,control_points,xml_parameters = deformation_read(dirname,dirnames,cpt) #on lit les momenta et control_points finaux, ceux qui ont été trouvé par le processus d'optimisation
+            #et qui donne lieu à la déformation en question
             
-            CPx = np.tile(control_points[:, 0], [int(momenta.shape[0] / 3), 1])
-            CPy = np.tile(control_points[:, 1], [int(momenta.shape[0] / 3), 1])
-            CPz = np.tile(control_points[:, 2], [int(momenta.shape[0] / 3), 1])
-            K = np.exp(-(np.square(CPx - np.transpose(CPx)) + np.square(CPy - np.transpose(CPy)) + np.square(
-                CPz - np.transpose(CPz))) / np.square(xml_parameters.deformation_kernel_width))
-            V1 = np.matmul(K, momenta[0:len(momenta):3])
-            V2 = np.matmul(K, momenta[1:len(momenta):3])
-            V3 = np.matmul(K, momenta[2:len(momenta):3])
-            V = np.zeros((len(momenta)))
-            V[0:len(momenta):3] = V1
-            V[1:len(momenta):3] = V2
-            V[2:len(momenta):3] = V3
-            regularity[cpt] = np.matmul(momenta, V)
+            
+            regularity[cpt] = regularity_calc2(control_points,momenta,xml_parameters.deformation_kernel_width) #à comprendre
 
+            
+            
             filename = path.join(dirname, "output", "colormaps",
-                                 "DeterministicAtlas__flow__tooth__subject_subj1__tp_0.vtk")
-            # Windows
-            system('" "' + pvpython_path + '" "' + script_path + '" "' + filename + '" "' + bn + '" "' + screenshotOutput + '" "' + str(valmax) + '" "')
-			# OSX
-            # system(pvpython_path+  ' ' + script_path + ' ' + filename + ' ' + bn + ' ' + screenshotOutput + ' ' + str(valmax))
-            pointsBase, facesBase, scalarsBase = readVTK(filename)
-            pointsBase, facesBase, scalarsBase = readVTK(filename)
+                                 "DeterministicAtlas__flow__tooth__subject_subj1__tp_100.vtk") #ça prend la dent colormapé 
+            pointsBase, facesBase, scalarsBase, VolumeBase[cpt] = read_and_volume(filename)
+            
+            take_screenshot(pointsBase,facesBase,scalarsBase, bn, screenshotOutput)
+            
             scalarsEnd = np.concatenate((scalarsEnd, scalarsBase))
-            VolumeBase[cpt] = getvolumeVTK(filename)
 
-            filename = str(Path(path.dirname(input_directory)) / "surfaces" / reference_surface)
-            pointsTarget, facesTarget, scalarsTarget = readVTK(filename)
-            VolumeTarget[cpt] = getvolumeVTK(filename)
+            filename = str(Path(path.dirname(input_directory)) / "surfaces" / reference_surface) #ça prend la dent de référence (qui a été utilisée pour deformetrica)
+            pointsTarget, facesTarget, scalarsTarget, VolumeTarget[cpt] = read_and_volume(filename)
 
             filename = path.join(dirname, "output",
-                                 "DeterministicAtlas__flow__tooth__subject_subj1__tp_19.vtk")
-            pointsRegistered, facesRegistered, scalarsRegistered = readVTK(filename)
-            VolumeRegistered[cpt] = getvolumeVTK(filename)
+                     "DeterministicAtlas__flow__tooth__subject_subj1__tp_19.vtk") #ça prend le dernier timepoint, donc la dent résultat finale de la transfo
+            #a rendre generique en lisant le nb de timepoint plutot que valeur 19 hardcodé
+            pointsRegistered, facesRegistered, scalarsRegistered, VolumeRegistered[cpt] = read_and_volume(filename)
 
-            nb = np.asarray(pcd.vertices).shape[0]
-            for point in pointsBase:
-                pcd.vertices.append(point-t[cpt+1][1:4])
-            facesBase = facesBase + nb
-            facesBase = np.concatenate((np.asarray(pcd.triangles), facesBase), axis=0)
-            pcd.triangles = o3d.utility.Vector3iVector(facesBase)
 
-            nbBase = np.asarray(pcdBase.vertices).shape[0]
-            for point in pointsTarget:
-                pcdBase.vertices.append(point - t[cpt+1][1:4])
-            facesTarget = facesTarget + nbBase
-            facesTarget = np.concatenate((np.asarray(pcdBase.triangles), facesTarget), axis=0)
-            pcdBase.triangles = o3d.utility.Vector3iVector(facesTarget)
+            pcd, nb = update_mesh(pcd, pointsBase,translation, cpt)
+            pcd,facesBase = update_faces(pcd, facesBase, nb)
+
+            pcdBase, nbBase = update_mesh(pcdBase, pointsTarget,translation, cpt)
+            pcdBase,facesTarget = update_faces(pcdBase, facesTarget, nbBase)
+            #avec ces updates, on accumule dans un mesh les mesh de toutes les dents, pour construire un mesh avec toutes les dents colormappé, remisent à leurs place, et en transparence
+            #avec la dent de référence
+
             cpt += 1
+            
     o3d.io.write_triangle_mesh(path.join(input_directory, "resultat.ply"), pcd)
     o3d.io.write_triangle_mesh(path.join(input_directory, "resultatReference.ply"), pcdBase)
 
@@ -212,6 +253,17 @@ if __name__ == '__main__':
                     path.basename(dirname), names[0], names[1], VolumeBase[cpt], VolumeTarget[cpt],
                     VolumeBase[cpt] - VolumeTarget[cpt], VolumeRegistered[cpt], regularity[cpt]))
                 cpt += 1
+
+if __name__ == '__main__':
+    input_directory = '/home/jeanfe/Documents/calcul/input'
+    reference_surface = "26-D2_1-20_prep_001.vtk"
+    translation = np.loadtxt("/home/jeanfe/Documents/code_python/bureau/data/compare/nouveau/translations.csv", delimiter=";")
+    pvpython_path = "/usr/bin/pvpython"
+    # Parview script
+    script_path = '/home/jeanfe/Documents/code_python/notation_dents_protocole_fin-JD/03_deformetrica/screenshot_script.py'
+    
+    
+    postprocess(input_directory,reference_surface,translation,pvpython_path,script_path)
 
 
 
