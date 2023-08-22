@@ -7,7 +7,7 @@ import open3d as o3d
 import copy
 import os
 import time
-from aux.MeshOperation import clean_mesh, cut_mesh_with_plane, fit_plane_to_mesh, getCircles, getCircles2, normale, process_meshes, pyvslice, remove_selected_zone, select_lowest_points, translate_plane, visualize_zone
+from aux.MeshOperation import clean_mesh, combine_meshes, cut_mesh_with_plane, find_threshold, fit_plane_to_mesh, getCircles, getCircles2, normale, process_meshes, pyvslice, remove_selected_zone, select_lowest_points, translate_plane, visualize_zone
 from aux.helper import switch_index
 from aux.o3dRendering import create_arrow, create_transparent_sphere
 from pathlib import Path
@@ -57,7 +57,7 @@ def write_output(new_mesh, meshprep, cercles, ordre,base_prefix="dents", output_
 
 
 
-def augmenterzone(mesh,points,thresholddot = 0.35,thresholddist = 5,supnormal = np.array([0, 1, 0])):
+def augmenterzone(mesh,points,thresholddot = 0.35,thresholddist = 5,supnormal = np.array([0, 1, 0]),kvoisin = 64,affiche = True):
     
     vertices = np.asarray(mesh.vertices)
     tree = cKDTree(vertices)
@@ -87,7 +87,7 @@ def augmenterzone(mesh,points,thresholddot = 0.35,thresholddist = 5,supnormal = 
             point = stack.pop()
 
             # Utiliser KDTree pour trouver les k voisins les plus proches
-            dist, indices = tree.query(point, k=64)
+            dist, indices = tree.query(point, k=kvoisin)
 
             cur = 0
             for index in indices:
@@ -102,7 +102,8 @@ def augmenterzone(mesh,points,thresholddot = 0.35,thresholddist = 5,supnormal = 
             if n_iterations % n_visualization_step == 0:
                 visualize_zone(mesh, zonefinale, coord_to_index)
     print("durée en itération " + str(n_iterations))
-    #visualize_zone(mesh, zonefinale, coord_to_index)
+    if affiche:
+        visualize_zone(mesh, zonefinale, coord_to_index)
     return zonefinale
 
 def pointvalide(index,normals,thresholddot,thresholddist,distorig,distindex,ground_normal = np.array([0, 1, 0])):
@@ -200,20 +201,25 @@ def pickFromPlane(mesh, point, normal):
 
 
 
-def findGridVect(points,pointref):
+def findGridVect(points,pointref,debug=False):
     p = np.array(points[2])
     vecref = p - np.array(pointref)
     tree = cKDTree(points)
     _, ind = tree.query(p, k=8)
+    V = []
     #print(ind)
     #print(ind[1])
     #print(points[ind[1]])
     v1 = p - np.array(points[ind[1]])
     v2 = p - np.array(points[ind[2]])
+    v1 = v1 / np.linalg.norm(v1)
+    v2 = v2 / np.linalg.norm(v2)
     i = 3
     while (abs(np.dot(v1,v2)) > 0.3) and i < len(ind):
+        V.append(v2)
         print(str(i) + "pas bon on passe au suivant")
         v2 = p - np.array(points[ind[i]])
+        v2 = v2 / np.linalg.norm(v2)
         i += 1
     
     #pour déterminer le sens des vecteurs à renvoyer
@@ -230,12 +236,15 @@ def findGridVect(points,pointref):
     dotmaxind = np.argmax([np.dot(vect,pp-pointref) for vect in vects])
     print("v1 et v2 : " + str(vects[dotmaxind]) + " " + str(vects[1-dotmaxind]))
     
-    return vects[dotmaxind],vects[1-dotmaxind]
+    if debug:
+        return vects[dotmaxind],vects[1-dotmaxind],V
+    else:
+        return vects[dotmaxind],vects[1-dotmaxind]
 
 def getPointsOrder(points, pointref, aordonne,tolerance = 12,debug= False):
     # ordre lexicographique
     #retourne l'indice des points de "points" triés.
-    v1, v2 = findGridVect(points, pointref)
+    v1, v2,V = findGridVect(points, pointref,debug=True)
     
     d = {}
     nop = []
@@ -263,7 +272,7 @@ def getPointsOrder(points, pointref, aordonne,tolerance = 12,debug= False):
         print("Longueur de la tranche key = " + str(key) + " est : " + str(len(d[key])))
     
     if debug:
-        return ordered_points, v1,v2
+        return ordered_points, v1,v2,V
     else:
         return ordered_points
 
@@ -281,7 +290,11 @@ def position_finding(meshprep,ninitpoint = 200,shift = 6.55,thickness = 6,comple
     [clus, _, _] = meshprep.cluster_connected_triangles()
     num_clusters = np.max(clus) + 1
     sphere = []
-    cercles  = []
+    sp = []
+    cerclesteeth  = []
+    cercles = []
+    
+    nnmesh = o3d.geometry.TriangleMesh()
     
     for cluster in range(num_clusters):
         #print("Cluster " + str(cluster) + "...")
@@ -295,7 +308,7 @@ def position_finding(meshprep,ninitpoint = 200,shift = 6.55,thickness = 6,comple
         ninit = int(len(clust.vertices)/6)
         print("ninit = " + str(ninit))
         init = select_lowest_points(clust,ninit,supnormal)
-        zoneplan = augmenterzone(clust,init,thresholddot=0.61,supnormal=supnormal)
+        zoneplan = augmenterzone(clust,init,thresholddot=0.61,supnormal=supnormal,affiche=False)
         try:
             normalclus,pointonplaneclus = fit_plane_to_mesh(np.array(list(zoneplan)),isPCD=True)
         except ValueError:
@@ -305,17 +318,44 @@ def position_finding(meshprep,ninitpoint = 200,shift = 6.55,thickness = 6,comple
         sign = np.sign(np.dot(normalclus,supnormal))
         nnpointplane,nnormal = translate_plane(pointonplaneclus,sign*normalclus,shift)
         #pyvslice(clust,nnormal,nnpointplane,slice_thickness=3)
+        nb_triangles_cible = int(len(clust.triangles) * 0.4) #40% de triangles mais à adapter on verra
+        decimated_clust = clust.simplify_quadric_decimation(nb_triangles_cible)
+        circles = []
         try:
-            circles = getCircles2(clust,nnormal,nnpointplane,slice_thickness=3,complete=complete)
+            circles = getCircles2(decimated_clust,nnormal,nnpointplane,slice_thickness=3,complete=complete)
         except ValueError:
             print("No circle found, very weird. Look it up.")
         
         if circles :
             #print(circles[0][0])
             for c in circles:
+                teeth = c[1]
+                if teeth: 
+                    cerclesteeth.append(c[0])
+                    sphere.append(create_transparent_sphere(c[0],1))
+                    sp.append(create_transparent_sphere(c[0],1))
+                else:
+                    sphere.append(create_transparent_sphere(c[0],1,color=[0,0,1]))
                 cercles.append(c[0])
-                sphere.append(create_transparent_sphere(c[0],c[1]))
+                
         
+        
+        new_mesh,_ = remove_selected_zone(clust, zoneplan)
+        """print("mesh sont on a enlevé la zone rouge")
+        o3d.visualization.draw_geometries([new_mesh])
+        
+        print("zone rouge")
+        o3d.visualization.draw_geometries([deleted])"""
+        
+        #new_mesh,normal,pointonplane = process_meshes(deleted, new_mesh)
+        
+        new_mesh = cut_mesh_with_plane(new_mesh, sign*normalclus, pointonplaneclus, up=False)
+        nnmesh = combine_meshes(new_mesh,nnmesh)
+        
+        """aaa = create_transparent_sphere(pointonplaneclus,1)
+        print("mesh sont on a enlevé la zone et cut")
+        t2,q2 = create_arrow(pointonplaneclus,sign*normalclus,length=10,color=[0,1,0])
+        o3d.visualization.draw_geometries([new_mesh,aaa,t2,q2])"""
         #centers = np.array(centers)  # Convert the list of centers to a numpy array
         # Create a PointCloud object for the centers
         #center_cloud = o3d.geometry.PointCloud()
@@ -327,9 +367,9 @@ def position_finding(meshprep,ninitpoint = 200,shift = 6.55,thickness = 6,comple
     l = [meshprep] + sphere + [ab100,ah100,ab010,ah010,ab001,ah001,abn,ahn]
     o3d.visualization.draw_geometries(l)
     if returnSphere:
-        return cercles,sphere
+        return cerclesteeth,sp,nnmesh,cercles
     else:
-        return cercles
+        return cerclesteeth,nnmesh,cercles
 
 def normalize(values):
         max_value = max(values)
@@ -351,14 +391,13 @@ def main():
         mesh,points = read_data(meshdir,pointsdir)
     
     p = points[0].copy()
-    p[1] += 0.6
     pp = (points[0] + points[1] + points[2])/3
-    pp[1] += 0.6
     print("p = " + str(p - 0.51))
     normal = normale(points[0],points[1],points[2])
     sign = np.sign(np.dot(normal,[0,1,0])) #c'est un problème........
+    p = p + sign*normal*0.51
 
-    zonedel = augmenterzone(mesh,points,thresholddot = 0.80,thresholddist = 5,supnormal = sign*normal)
+    zonedel = augmenterzone(mesh,points,thresholddot = 0.80,thresholddist = 10,supnormal = sign*normal)
     
     meshprep,_ = remove_selected_zone(copy.deepcopy(mesh), zonedel)
 
@@ -367,50 +406,73 @@ def main():
     
     
     print("ON VA PICK FROM PLANE")
-    pointref = pickFromPlane(meshprep, pp, sign*normal)
+    pointref = pickFromPlane(meshprep, p, sign*normal)
     
-    meshprep = clean_mesh(meshprep, min_triangles=600)
+    meshprep = clean_mesh(meshprep, min_triangles=600) #remplacer 600 par % de triangles à garder en fonction de taille ou alors le truc avec la courbe à 2 pic (valable pour ceux dessous aussi)
     
     o3d.visualization.draw_geometries([meshprep])
     
     meshptitsupp = copy.deepcopy(meshprep)
-    meshptitsupp = clean_mesh(meshptitsupp, min_triangles=600)
-    pos = position_finding(meshptitsupp,complete=True,thickness=10,shift=4,supnormal=sign*normal)
+    meshptitsupp = clean_mesh(meshptitsupp, min_triangles=600) #remplacer 600 par % de triangles à garder en fonction de taille
+    cerclesteeth,sp,nmeshprep,cercles = position_finding(meshptitsupp,complete=True,thickness=10,shift=3.5,supnormal=sign*normal,returnSphere=True)
+    
+    nmeshprep.compute_vertex_normals()
+    
+    print("affichage du nouveau meshprep experimental")
+    o3d.visualization.draw_geometries([nmeshprep])
     
     
-    clean_mesh(meshprep, min_triangles=4000)
+    clean_mesh(nmeshprep, min_triangles=1000,autofind=False) #remplacer 4000 par % de triangles à garder en fonction de taille
+    print("affichage du nouveau meshprep experimental apres clean")
+    o3d.visualization.draw_geometries([nmeshprep])
     
-    
-    
+    clean_mesh(meshprep, min_triangles=4000) #remplacer 4000 par % de triangles à garder en fonction de taille
     o3d.visualization.draw_geometries([meshprep])
     
     mesh.remove_duplicated_vertices() #car le mesh est malformé
-    zonefinale = augmenterzone(mesh, points,supnormal=sign*normal)
+    
+    #creer maillage simplifié
+    """nb_triangles_cible = int(len(mesh.triangles) * 0.1) #10% de triangles mais à adapter on verra
+    decimated_mesh = mesh.simplify_quadric_decimation(nb_triangles_cible)
+    print("augmentation zone mesh simplifié")
+    zonestart = augmenterzone(decimated_mesh,points,supnormal=sign*normal,kvoisin = 64,thresholddot=0.90,thresholddist=3.5) #on réalise d'abord la croissance de région sur un mesh avec moins de points.
+    
+    zonestart = tuple(set(zonestart) | set(zonedel))
+    print("augmentation zone mesh total")
+    zonefinale = augmenterzone(mesh, zonestart,supnormal=sign*normal,kvoisin=32) #d'abord faire sur maillage simplifié puis donner zone en input pour maillage totale
     new_mesh,deleted = remove_selected_zone(mesh, zonefinale)
     o3d.visualization.draw_geometries([new_mesh])
     new_mesh,normal,pointonplane = process_meshes(deleted, new_mesh)
     o3d.visualization.draw_geometries([new_mesh])
     print("point on plane = " + str(pointonplane))
     print("Cleaning mesh...")
-    new_mesh = clean_mesh(new_mesh)
+    new_mesh = clean_mesh(new_mesh)"""
     
     #[triangle_clusters, _, _] = new_mesh.cluster_connected_triangles()
     #num_clusters = np.max(triangle_clusters) + 1
     
     #print("Number of clusters: " + str(num_clusters))
     
-    o3d.visualization.draw_geometries([new_mesh])
+    """o3d.visualization.draw_geometries([new_mesh])
 
     
-    cercles,sp = position_finding(meshprep,returnSphere=True,supnormal=sign*normal)
-    ordre,v1,v2 = getPointsOrder(pos,pointref,cercles,debug=True)
+    cercles,sp,_ = position_finding(meshprep,returnSphere=True,supnormal=sign*normal)"""
+    
+    ordre,v1,v2,V = getPointsOrder(cercles,pointref,cerclesteeth,debug=True)
     print(ordre)
     
+    acc = 0
+    vectvis = []
+    for v in V:
+        vector,h = create_arrow(np.array(cercles[2]), v, 10,color=[1,0 + acc,0 + 3*acc])
+        vectvis.append(vector)
+        vectvis.append(h)
+        acc += 0.05
     
     vector1,h1 = create_arrow(np.array(pointref), v1, 10,color=[0,1,0])
     vector2,h2 = create_arrow(np.array(pointref), v2, 10,color=[0,0,1])
-    vector3,h3 = create_arrow(np.array(pos[0]), v1, 10,color=[0,1,0])
-    vector4,h4 = create_arrow(np.array(pos[0]), v2, 10,color=[0,0,1])
+    vector3,h3 = create_arrow(np.array(cercles[2]), v1, 10,color=[0,1,0])
+    vector4,h4 = create_arrow(np.array(cercles[2]), v2, 10,color=[0,0,1])
 
     ordre = np.array(switch_index(ordre))
     normalized_values = normalize(ordre)
@@ -421,7 +483,7 @@ def main():
     for i, sphere in enumerate(sp):
         sphere.paint_uniform_color(colors[i])
 
-    sp = [meshptitsupp] + sp + [vector1, vector2,h1,h2,vector3,vector4,h3,h4]
+    sp = [meshptitsupp] + sp + [vector1, vector2,h1,h2,vector3,vector4,h3,h4] + vectvis
     o3d.visualization.draw_geometries(sp)
         
     #points = np.asarray(deleted.vertices)
@@ -430,7 +492,7 @@ def main():
     # Visualisation des clusters
     #visualize_clusters(deleted, labels)
     
-    write_output(new_mesh,meshprep,cercles,ordre)
+    write_output(nmeshprep,meshprep,cercles,ordre)
     
     
 

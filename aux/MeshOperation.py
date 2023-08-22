@@ -9,7 +9,9 @@ from PIL import Image, ImageDraw
 import pyvista as pv
 from sklearn.neighbors import KDTree
 import vtk
+from sklearn.cluster import KMeans
 from aux.ImageOperation import findCenter, keepCircle, preprocess
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
 
 def slice2image(points, normal, point_on_plane, image_size):
     
@@ -67,12 +69,13 @@ def slicemesh(mesh, normal, point_on_plane, slice_thickness=0.01):
     return np.array(slice_points)
 
 
-def align_vector_to_ref(ref,vect):
+def align_vector_to_ref(ref,vect,inv=False):
     rotation_axis = np.cross(vect, ref)
     rotation_axis /= np.linalg.norm(rotation_axis)
     angle = np.arccos(np.dot(vect, ref) / np.linalg.norm(vect))
     angle = np.degrees(angle)  # Convertir en degrés car PyVista attend des degrés
-
+    if inv:
+        angle = 360 - angle
     return pv.transformations.axis_angle_rotation(rotation_axis, angle)
         
 def plotterCreate():
@@ -84,22 +87,36 @@ def plotterCreate():
     
     return pl
 
-def imageCreate(pl,slices,viewnorm = [0,0,1],isZ=True):
+def imageCreate(pl,slices,viewnorm = [0,0,1],isZ=True,doTight=True):
     #Création de l'image
     if isZ:
         axis = 'xy'
     else:
         axis = 'xz'
-    print("viewnorm : " + str(viewnorm))
-    actor,_ = pl.add_mesh(slices, opacity=1, color='white')  # La couleur des tranches est mise en blanc pour contraster avec le fond noir.
+    #print("viewnorm : " + str(viewnorm))
+    if type(slices) is pv.PolyData:
+        if slices is None or slices.n_points <= 0:
+            #print("Invalid slice provided to imageCreate")
+            return None
+    #print(slices)
+    actor = pl.add_mesh(slices, opacity=1, color='white')  # La couleur des tranches est mise en blanc pour contraster avec le fond noir.
+    #print("juste apres actor = ")
+    if type(actor) is tuple:
+        #print("on est dans le len actor")
+        actor = actor[0]
     #pl.view_vector(viewnorm)
-    pl.camera.tight(view=axis,negative=False)
+    if doTight:
+        pl.camera.tight(view=axis,negative=False)
+    #print("on va screen")
     img = pl.screenshot(return_img=True)
     imageio.imsave('screenshot.png', img)
     pl.remove_actor(actor)
+    #print("imagecreatefini")
     return img
       
 def pyvslice(mesh, normal, point_on_plane, slice_thickness=0.01, n_slices=30):
+    
+    imlist = []
     
     #Création du mesh pyvista
     pb = np.array(mesh.vertices)
@@ -109,27 +126,27 @@ def pyvslice(mesh, normal, point_on_plane, slice_thickness=0.01, n_slices=30):
 
     isZ = False
     #Alignement du mesh selon l'axe Z
-    transform_matrix = align_vector_to_ref(ref = [0,0,1] ,vect= normal) #IL FAUT CONTROLER LE SIGNE DE LA NORMALE CAR DES FOIS IL FAUT - ET DES FOIS IL FAUT +. A AUTOMATISER
+    transform_matrix = align_vector_to_ref(ref = [0,0,1] ,vect= normal) 
     vecalig = [0,1,0]
     if np.linalg.norm(transform_matrix[:2,:2],-np.inf) > 10:
         print("Normal alignée avec l'axe Y")
         transform_matrix = align_vector_to_ref(ref = [0,1,0],vect=normal)
         inverse_matrix = align_vector_to_ref(ref = normal,vect= [0,1,0])
     else:
-        inverse_matrix = align_vector_to_ref(ref = normal,vect= [0,0,1])
+        inverse_matrix = align_vector_to_ref(ref = normal,vect= [0,0,1],inv=True)
         vecalig = [0,0,1]
         isZ = True
-    print(np.linalg.norm(transform_matrix[:2,:2],-np.inf))
+    """print(np.linalg.norm(transform_matrix[:2,:2],-np.inf))
     print("MATRICE TRANSFO hihi: ")
-    print(transform_matrix)
+    print(transform_matrix)"""
     pyvista_mesh.transform(transform_matrix)
-    print("point on plane : " + str(point_on_plane))
+    """print("point on plane : " + str(point_on_plane))"""
     transformed_point_on_plane = np.dot(transform_matrix[:3, :3], point_on_plane) + transform_matrix[:3, 3]
-    print("transformed point on plane : " + str(transformed_point_on_plane))
+    """print("transformed point on plane : " + str(transformed_point_on_plane))
     print("retransformed point on plane : " + str(np.dot(inverse_matrix[:3, :3], transformed_point_on_plane) + inverse_matrix[:3, 3]))
 
     print("On a transfo")
-
+"""
     vecalig = np.array(vecalig)
     print("On va print le truc : " + str(slice_thickness * vecalig))
     a = transformed_point_on_plane + slice_thickness*vecalig
@@ -150,7 +167,18 @@ def pyvslice(mesh, normal, point_on_plane, slice_thickness=0.01, n_slices=30):
     
     pl = plotterCreate()
     
-    img = imageCreate(pl,slices,viewnorm=vecalig,isZ=isZ)
+    imgdebug = imageCreate(pl,slices,viewnorm=vecalig,isZ=isZ)
+    #imageio.imsave('screenshotdebug.png', imgdebug)
+    
+    print("LONGUEUR DE SLICES : " + str(len(slices)))
+    for s in slices:
+        img = imageCreate(pl,s,viewnorm=vecalig,isZ=isZ,doTight=False) #marche pas du tout dans la boucle là, surement a cause du tight et autre
+        if img is None:
+            print("Warning: imageCreate returned None for slice")
+            #print("Warning: imageCreate returned None for slice", s)
+        else:
+            imlist.append(img)
+        #print("Taille actuelle de imlist : " + str(len(imlist)))
 
     print("Image crée")
     
@@ -165,14 +193,16 @@ def pyvslice(mesh, normal, point_on_plane, slice_thickness=0.01, n_slices=30):
     print("MAX img : " + str(np.max(coordinates, axis=0)))
     #pl.add_mesh(pyvista_mesh, opacity=0.5)
     #pl.add_mesh(pv.Sphere(radius=slice_thickness, center=transformed_point_on_plane), color="red")
-    pl.add_mesh(pv.Sphere(radius=0.5, center=[min_coords[0],min_coords[1],np.mean(all_points[:,2])]), color="red")
+    """pl.add_mesh(pv.Sphere(radius=0.5, center=[min_coords[0],min_coords[1],np.mean(all_points[:,2])]), color="red")
     pl.add_mesh(pv.Sphere(radius=0.5, center=[max_coords[0],max_coords[1],np.mean(all_points[:,2])]), color="blue")
-    imageio.imsave('screenshotdebug.png', pl.screenshot(return_img=True))
-    
-    return min_coords,max_coords,np.linalg.inv(transform_matrix),img,isZ,transformed_point_on_plane[2]
+    imageio.imsave('screenshotdebug.png', pl.screenshot(return_img=True))"""
     
 
-def unproject_simple(screen_x, screen_y, min_coords, max_coords, width,height, inverse_matrix,isZ = True,im=None,zpos = 0):
+    
+    return min_coords,max_coords,inverse_matrix,imlist,isZ,transformed_point_on_plane[2]
+    
+
+def unproject_simple(screen_x, screen_y, min_coords, max_coords, width,height, inverse_matrix,isZ = True,im=None,zpos = 0,debug=False):
     # Convertir les coordonnées d'écran en coordonnées normalisées.
     norm_x = screen_x / width
     norm_y = screen_y / height
@@ -182,21 +212,19 @@ def unproject_simple(screen_x, screen_y, min_coords, max_coords, width,height, i
     denormalized_y = norm_y * (min_coords[1]-max_coords[1]) + max_coords[1]
 
     # Conversion en coordonnées d'objet dans l'espace transformé.
-    if isZ:
-        obj_coord_transformed = [denormalized_x, denormalized_y, zpos]  # Z = 0 pour la projection sur XY
-    else:
-        obj_coord_transformed = [zpos,denormalized_x, denormalized_y]
-
+    obj_coord_transformed = [denormalized_x, denormalized_y, zpos]  # Z = 0 pour la projection sur XY
     
-    #im[150+int(denormalized_x), 150+int(denormalized_y)] = 255
-    #cv2.circle(im, (150+int(denormalized_x), 150+int(denormalized_y)), 2,255, -1)  # draw the circle
-
-    # Convertir ce point aux coordonnées d'objet (en espace d'origine).
     obj_coord_original = np.dot(obj_coord_transformed, inverse_matrix[:3, :3]) + inverse_matrix[:3, 3]
+    if debug:
+        #im[150+int(denormalized_x), 150+int(denormalized_y)] = 255
+        #cv2.circle(im, (150+int(denormalized_x), 150+int(denormalized_y)), 2,255, -1)  # draw the circle
 
-    cv2.circle(im, (150+int(obj_coord_original[2]), 150+int(obj_coord_original[0])), 2,255, -1)  # draw the circle
+        # Convertir ce point aux coordonnées d'objet (en espace d'origine).
+        
 
-    coord_test = np.dot([min_coords[0],min_coords[1],0], inverse_matrix[:3, :3]) + inverse_matrix[:3, 3]
+        cv2.circle(im, (150+int(obj_coord_original[1]), 150+int(obj_coord_original[0])), 2,255, -1)  # draw the circle
+
+        coord_test = np.dot([min_coords[0],min_coords[1],0], inverse_matrix[:3, :3]) + inverse_matrix[:3, 3]
     
     """temp = coord_test[2]
     coord_test[2] = coord_test[0]
@@ -205,8 +233,10 @@ def unproject_simple(screen_x, screen_y, min_coords, max_coords, width,height, i
     """temp = obj_coord_original[2]
     obj_coord_original[2] = obj_coord_original[0]
     obj_coord_original[0] = temp"""
-    
-    return obj_coord_original,im
+    if debug:
+        return obj_coord_original,im
+    else:
+        return obj_coord_original
 
 
 def get3DCoord(xshift,yshift,zpos,min_coords,max_coords,inverse_matrix):
@@ -307,51 +337,101 @@ def getCircles(mesh, normal, point_on_plane, complete = False,image_size=250, sl
     
     return cercles
 
-def getCircles2(mesh, normal, point_on_plane, complete = False,image_size=500, slice_thickness=6, dp=1, minDist=10, param1=50, param2=60, minRadius=0, maxRadius=300):
+def isTeeth(min_coords,max_coords,seuil = 4):
+    distance = np.linalg.norm(min_coords-max_coords)
+    if distance > seuil:
+        return True
+    else:
+        return False
+
+def getCircles2(mesh, normal, point_on_plane, complete = False,image_size=500, slice_thickness=6, dp=2, minDist=25, param1=90, param2=110, minRadius=0, maxRadius=30000):
     
-    min_coords,max_coords,inverse_matrix,image,isZ,zpos = pyvslice(mesh = mesh, normal=normal, point_on_plane=point_on_plane, slice_thickness=slice_thickness, n_slices=15)
+    min_coords,max_coords,inverse_matrix,imlist,isZ,zpos = pyvslice(mesh = mesh, normal=normal, point_on_plane=point_on_plane, slice_thickness=slice_thickness, n_slices=30)
     
+    #IL FAUDRA TRIER ICI ENTRE PIC ET (DENT AVEC PIC) POUR : 1) RENVOYER LES BONNES INFOS A AUTOCUT 2) SAVOIR SI IL FAUT APPLIQUER KEEPCIRCLES AVANT LE FINDCENTER (C POUR SUPPRIMER LES DENTS)
+    
+    teeth = isTeeth(min_coords,max_coords)
     
     print("Slice2Image fini")
     
-    pil_image = Image.fromarray(image)
-    pil_image.save("output.png")
+    """pil_image = Image.fromarray(image)
+    pil_image.save("output.png")"""
     
     """pil_image = Image.fromarray(img2)
     pil_image.save("outputverif.png")"""
     
-    if len(image.shape) == 3:
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    outputcircles = True
     
     #img = preprocess(img)
     #img = keepCircle(img,False)
-    
+    circles = []
     cercles = []
-    circles = cv2.HoughCircles(image, cv2.HOUGH_GRADIENT, dp, minDist, param1=param1, param2=param2, minRadius=minRadius,maxRadius=maxRadius)
+    print("Longueur de imlist : " + str(len(imlist)))
+    for imelt in imlist:
+        if len(imelt.shape) == 3:
+            #print("On est dans le len imelt")
+            imelt = cv2.cvtColor(imelt, cv2.COLOR_BGR2GRAY)
+        imelt = preprocess(imelt)
+        if teeth:
+            imelt = keepCircle(imelt,bary=False,inf=15,sup=10000)
+            #print("On va houghcircles")
+            dcircles = cv2.HoughCircles(imelt, cv2.HOUGH_GRADIENT, dp, minDist, param1=param1, param2=param2)
+        else :
+            #print("On va houghcircles")
+            dcircles = cv2.HoughCircles(imelt, cv2.HOUGH_GRADIENT, dp, minDist=50, param1=70, param2=220)
+        if dcircles is not None:
+            if outputcircles:
+                for c in dcircles[0,:]:
+                    if len(imelt.shape) == 2 or imelt.shape[2] == 1:  # If the image is grayscale
+                        imelt = cv2.cvtColor(imelt, cv2.COLOR_GRAY2BGR)
+                    cv2.circle(imelt, (int(c[0]), int(c[1])), int(c[2]), (0, 0, 255), 4)
+                    pil_image = Image.fromarray(imelt)
+                    pil_image.save("outputcircles.png")
+                #print("On a trouvé des cercles")
+            circles += list(dcircles[0, :])
+            #print("Nombre de cercles après ajout :", len(circles))
     
+    #print("Nombre de cercles avant le dernier bloc :", len(circles))
+    if circles:
+        #print("on est dans le if circles")
+        if len(imlist[0].shape) == 3:
+            #print("On est dans le len imelt")
+            immm = cv2.cvtColor(imlist[0], cv2.COLOR_BGR2GRAY)
+        width, height = immm.shape
+        try:
+            mean_center = np.mean(circles, axis=0)
+            #print(mean_center)
+        except Exception as e:
+            print("Erreur lors du calcul de la moyenne:", e)
+        try:
+            centre = unproject_simple(mean_center[0], mean_center[1], min_coords, max_coords, width,height, inverse_matrix,zpos=zpos)#pb et on passe jamais dedans
+        except Exception as e:
+            print("Erreur lors de l'exécution de unproject_simple:", e)
+        cercles.append([centre,teeth])
+        return cercles
     
-    im = cv2.imread("verifbefore.png")
+    """im = cv2.imread("verifbefore.png")
     if im is None:
         im = np.zeros((300, 300), dtype=np.uint8)
         cv2.imwrite("verifbefore.png",im)
     
     if circles is None:
         print("No circles found")
-        return None
+        return None"""
     
-    if len(image.shape) == 2 or image.shape[2] == 1:  # If the image is grayscale
-        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-    for (x,y,r) in circles[0,:]:
+    """if len(image.shape) == 2 or image.shape[2] == 1:  # If the image is grayscale
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)"""
+    """for (x,y,r) in circles[0,:]:
         #print(r)
         cv2.circle(image, (int(x), int(y)), int(r), (0, 0, 255), 4)  # draw the circle
         height, width, _ = image.shape
         xshift = (x - width/2)/width
         yshift = (y - height/2)/height
         centre,im = unproject_simple(x, y, min_coords, max_coords, width,height, inverse_matrix,isZ,im = im,zpos=zpos)
-        cercles.append([centre,1])
+        cercles.append([centre,1])"""
         
-    pil_image = Image.fromarray(image)
-    pil_image.save("outputcircles.png")
+    """pil_image = Image.fromarray(image)
+    pil_image.save("outputcircles.png")"""
     
     """if complete:
         h, w = img.shape
@@ -362,7 +442,7 @@ def getCircles2(mesh, normal, point_on_plane, complete = False,image_size=500, s
         centre = get3dcenter(b[0],b[1],direction2,direction1,point_on_plane,translation,scale,normal)
         cercles.append([centre,1])"""
     
-    cv2.imwrite("verifbefore.png",im)
+    """cv2.imwrite("verifbefore.png",im)"""
     return cercles
 
 def remove_selected_zone(mesh, zone):
@@ -379,12 +459,19 @@ def remove_selected_zone(mesh, zone):
     mesh.remove_triangles_by_mask(triangles_to_remove)
     return mesh,nmesh
 
-def clean_mesh(mesh,min_triangles=500):
-    [triangle_clusters, _, _] = mesh.cluster_connected_triangles()
+def clean_mesh(mesh,min_triangles=500,autofind=False):
+    [triangle_clusters, cc, _] = mesh.cluster_connected_triangles()
     num_clusters = np.max(triangle_clusters) + 1
     triangles_to_remove = []
     
     print("Number of clusters: " + str(num_clusters))
+    
+    if autofind:
+        cluster_ids = np.array(cc)
+        _, counts = np.unique(cluster_ids, return_counts=True)
+        seuil = find_threshold(counts)
+        print("Seuil : " + str(seuil))
+        min_triangles = seuil
     
     for cluster in range(num_clusters):
         cluster_indices = np.where(np.array(triangle_clusters) == cluster)[0]
@@ -548,3 +635,55 @@ def visualize_zone(mesh, zone, coord_to_index):
     temp = copy.deepcopy(mesh)
     temp.vertex_colors = o3d.utility.Vector3dVector(colors)
     o3d.visualization.draw_geometries([temp])
+    
+def combine_meshes(mesh1, mesh2):
+    """
+    Combine two open3d meshes into a single mesh.
+    
+    Parameters:
+    - mesh1: First open3d mesh.
+    - mesh2: Second open3d mesh.
+    
+    Returns:
+    - combined_mesh: A single combined open3d mesh.
+    """
+    combined_mesh = o3d.geometry.TriangleMesh()
+
+    # Combine vertices and triangles from both meshes
+    combined_mesh.vertices = o3d.utility.Vector3dVector(np.vstack([mesh1.vertices, mesh2.vertices]))
+    combined_triangles = np.vstack([np.asarray(mesh1.triangles), np.asarray(mesh2.triangles) + len(mesh1.vertices)])
+    combined_mesh.triangles = o3d.utility.Vector3iVector(combined_triangles)
+    
+    return combined_mesh
+
+
+def find_threshold(cluster_sizes):
+    """
+    Trouve le seuil séparant les très grands clusters du reste.
+
+    Args:
+    - cluster_sizes (list): Liste des tailles des clusters.
+
+    Returns:
+    - threshold (float): Seuil estimé.
+    """
+
+    # Préparez les données pour LDA et K-means
+    cluster_sizes = np.array(cluster_sizes).reshape(-1, 1)
+
+    # Utilisez K-means pour obtenir une première approximation des labels
+    kmeans = KMeans(n_clusters=3, random_state=0).fit(cluster_sizes)
+    initial_labels = kmeans.labels_
+
+    # Appliquer LDA
+    lda = LDA(n_components=2)  # Nous voulons réduire à 2 dimensions pour 3 classes
+    lda.fit(cluster_sizes, initial_labels)
+
+    # Trier les centres de classe de LDA pour trouver le seuil
+    class_means = lda.means_.flatten()
+    sorted_means = np.sort(class_means)
+
+    # Le seuil est la moyenne entre le centre du cluster moyen et le centre du plus grand cluster
+    threshold = (sorted_means[1] + sorted_means[2]) / 2
+
+    return threshold

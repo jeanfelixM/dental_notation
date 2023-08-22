@@ -12,6 +12,7 @@ import pickle
 import uuid
 from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QThread, pyqtSignal
+from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtWidgets import QFileDialog
 from collections import defaultdict
 import re, os
@@ -28,7 +29,19 @@ from main import batchend
 class FileNotFoundException(Exception):
     pass
 
+class AutoCutThread(QThread):
+    calculation_finished = pyqtSignal(tuple)  # Signal to be emitted when calculation is finished
 
+    def __init__(self, dirs,points, parent=None):
+        super().__init__(parent)
+        self.dirs = dirs
+        self.points = points
+
+    def run(self):
+        # Run your intensive calculation here
+        p = autocut(self.dirs,self.points)
+        # After the calculation, emit the finished signal
+        self.calculation_finished.emit(p)
 class FirstCalculationThread(QThread):
     calculation_finished = pyqtSignal(str)  # Signal to be emitted when calculation is finished
 
@@ -63,10 +76,14 @@ class SecondCalculationThread(QThread):
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
-        self.dirs = []
+        self.surfdirs = []
         self.zipdir = ""
         self.refnum = []
+        self.supdirs = []
+        self.teethcount = []
         self.dzipfile = ""
+        self.configdir = ""
+        self.maildir = ""
         icon = QtGui.QIcon()
         icon.addPixmap(QtGui.QPixmap("../../../Téléchargements/tooth2.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         MainWindow.setObjectName("MainWindow")
@@ -126,6 +143,7 @@ class Ui_MainWindow(object):
         self.startautocut = QtWidgets.QPushButton(self.cuttab)
         self.startautocut.setGeometry(QtCore.QRect(20, 130, 191, 31))
         self.startautocut.setObjectName("startautocut")
+        self.startautocut.setEnabled(False)
         self.opencutdir = QtWidgets.QPushButton(self.cuttab)
         self.opencutdir.setEnabled(False)
         self.opencutdir.setGeometry(QtCore.QRect(230, 120, 81, 51))
@@ -158,12 +176,12 @@ class Ui_MainWindow(object):
         self.alignementselec.setGeometry(QtCore.QRect(10, 20, 141, 51))
         self.alignementselec.setObjectName("alignementselec")
         self.line = QtWidgets.QFrame(self.centralwidget)
-        self.line.setGeometry(QtCore.QRect(10, 260, 721, 20))
+        self.line.setGeometry(QtCore.QRect(0, 290, 721, 20))
         self.line.setFrameShape(QtWidgets.QFrame.HLine)
         self.line.setFrameShadow(QtWidgets.QFrame.Sunken)
         self.line.setObjectName("line")
         self.line_2 = QtWidgets.QFrame(self.centralwidget)
-        self.line_2.setGeometry(QtCore.QRect(380, 0, 20, 251))
+        self.line_2.setGeometry(QtCore.QRect(380, 0, 20, 291))
         self.line_2.setFrameShape(QtWidgets.QFrame.VLine)
         self.line_2.setFrameShadow(QtWidgets.QFrame.Sunken)
         self.line_2.setObjectName("line_2")
@@ -201,16 +219,16 @@ class Ui_MainWindow(object):
         self.progressBar.setProperty("value", 24)
         self.progressBar.setObjectName("progressBar")
         self.label_6 = QtWidgets.QLabel(self.centralwidget)
-        self.label_6.setGeometry(QtCore.QRect(70, 290, 81, 16))
+        self.label_6.setGeometry(QtCore.QRect(50, 320, 81, 16))
         self.label_6.setObjectName("label_6")
         self.listWidget = QtWidgets.QListWidget(self.centralwidget)
         self.listWidget.setGeometry(QtCore.QRect(0, 560, 731, 121))
         self.listWidget.setObjectName("listWidget")
         self.resSelect = QtWidgets.QPushButton(self.centralwidget)
-        self.resSelect.setGeometry(QtCore.QRect(40, 310, 141, 51))
+        self.resSelect.setGeometry(QtCore.QRect(20, 340, 141, 51))
         self.resSelect.setObjectName("resSelect")
         self.start2 = QtWidgets.QPushButton(self.centralwidget)
-        self.start2.setGeometry(QtCore.QRect(40, 370, 141, 41))
+        self.start2.setGeometry(QtCore.QRect(20, 400, 141, 41))
         self.start2.setObjectName("start2")
         self.openzipdir = QtWidgets.QPushButton(self.aligtab)
         self.openzipdir.setEnabled(False)
@@ -224,6 +242,18 @@ class Ui_MainWindow(object):
         self.label_8 = QtWidgets.QLabel(self.aligtab)
         self.label_8.setGeometry(QtCore.QRect(270, 10, 81, 16))
         self.label_8.setObjectName("label_8")
+        self.label_12 = QtWidgets.QLabel(self.centralwidget)
+        self.label_12.setGeometry(QtCore.QRect(250, 320, 131, 16))
+        self.label_12.setObjectName("label_12")
+        self.SENDMAIL = QtWidgets.QPushButton(self.centralwidget)
+        self.SENDMAIL.setGeometry(QtCore.QRect(230, 410, 171, 31))
+        self.SENDMAIL.setObjectName("SENDMAIL")
+        self.configSelec = QtWidgets.QPushButton(self.centralwidget)
+        self.configSelec.setGeometry(QtCore.QRect(230, 340, 81, 61))
+        self.configSelec.setObjectName("configSelec")
+        self.mailListSelec = QtWidgets.QPushButton(self.centralwidget)
+        self.mailListSelec.setGeometry(QtCore.QRect(320, 340, 81, 61))
+        self.mailListSelec.setObjectName("mailListSelec")
         self.zipacces = QtWidgets.QLabel(self.centralwidget)
         self.zipacces.setGeometry(QtCore.QRect(0, 480, 731, 31))
         self.zipacces.setText("")
@@ -260,11 +290,14 @@ class Ui_MainWindow(object):
         self.selectiontype.currentIndexChanged.connect(self.selectiontypechanged)
         self.decouptype.currentIndexChanged.connect(self.decouptypechanged) 
         self.alignementselec.clicked.connect(self.select_alig)
+        self.autocutselect.clicked.connect(self.select_cut)
         self.resSelect.clicked.connect(self.select_res)
         self.start2.clicked.connect(self.start_res)
         self.start2.setEnabled(False)
         self.start1.clicked.connect(self.start_alig)
+        self.startautocut.clicked.connect(self.start_cut)
         self.clearbox.stateChanged.connect(self.updatewply)
+        self.configSelec.clicked.connect(self.select_config)
         
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
@@ -300,6 +333,10 @@ class Ui_MainWindow(object):
         self.startautocut.setText(_translate("MainWindow", "Lancer"))
         self.opencutdir.setText(_translate("MainWindow", "Open File"))
         self.thenalign.setText(_translate("MainWindow", "aligner"))
+        self.configSelec.setText(_translate("MainWindow", "Config"))
+        self.mailListSelec.setText(_translate("MainWindow", "Mails liste"))
+        self.label_12.setText(_translate("MainWindow", "Envoie des mails"))
+        self.SENDMAIL.setText(_translate("MainWindow", "ENVOYER"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.cuttab), _translate("MainWindow", "Autocut"))
         self.label_11.setText(_translate("MainWindow", "<html><head/><body><p>Nombre de dent <br/>par support</p></body></html>"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.cuttab), _translate("MainWindow", "Autocut"))
@@ -317,7 +354,7 @@ class Ui_MainWindow(object):
         self.resetstart1()
     
     def resetstart1(self):
-        self.dirs = []
+        self.surfdirs = []
         self.refnum = []
         self.zipdir = ""
         self.start1.setEnabled(False)
@@ -327,7 +364,7 @@ class Ui_MainWindow(object):
         self.dzipfile, _ = QFileDialog.getOpenFileName(
             None, "Select the archive", "~/", "Zip Archive (*.zip)"
         )
-        if self.dzipfile is not None and (self.dzipfile and len(self.dirs) > 0):
+        if self.dzipfile is not None and (self.dzipfile and len(self.surfdirs) > 0):
             self.start2.setEnabled(True)
         else:
             self.start2.setEnabled(False)
@@ -343,16 +380,33 @@ class Ui_MainWindow(object):
         self.second_calculation_thread.calculation_finished.connect(self.on_second_calculation_finished)
         self.second_calculation_thread.start()
     
+    def start_cut(self):
+        points = self.select_points_sup(self.supdirs)
+        if hasattr(self, 'autocut_thread') and self.autocut_thread.isRunning():
+            # Optionally, handle the case where the thread is already running
+            print("Déjà en cours")
+            return
+        self.autocut_thread = AutoCutThread(self.supdirs,points)
+        self.autocut_thread.calculation_finished.connect(self.on_autocut_finished)
+        self.autocut_thread.start()
     
     def start_alig(self):
         if hasattr(self, 'calculation_thread') and self.calculation_thread.isRunning():
             # Optionally, handle the case where the thread is already running
             print("Déjà en cours")
             return
-        self.calculation_thread = FirstCalculationThread(self.dirs,self.noise.value(),self.objectkernel.value(),self.deformkernel.value(),self.refnum)
+        self.calculation_thread = FirstCalculationThread(self.surfdirs,self.noise.value(),self.objectkernel.value(),self.deformkernel.value(),self.refnum)
         self.calculation_thread.calculation_finished.connect(self.on_calculation_finished)
         self.calculation_thread.start()
 
+    def on_autocut_finished(self,paths):
+        for pointspic,surface,surfacecut in paths:
+            self.surfdirs.append((pointspic,surface,surfacecut))
+            self.update_surf_list(pointspic,surface,surfacecut)
+        self.start1.setEnabled(True)
+        if self.thenalign.isChecked():
+            self.start_alig()
+        
     def on_calculation_finished(self,path):
         self.zipdir = path
         self.openzipdir.setEnabled(True)
@@ -368,14 +422,28 @@ class Ui_MainWindow(object):
         if self.selectiontype.currentText() == "auto":
             self.auto_user_select_files()
         self.on_file_selected()
+        
+    def select_cut(self):
+        if self.selectiontype2.currentText() == "manuel":
+            self.manu_user_select_cut()
+        if self.selectiontype2.currentText() == "auto":
+            self.auto_user_select_cut()
+        self.on_file_selected()
 
     def on_file_selected(self):
-        if self.dirs is not None and (self.dirs and len(self.dirs) > 0):
-            print(self.dirs)
+        if self.surfdirs is not None and (self.surfdirs and len(self.surfdirs) > 0):
+            print(self.surfdirs)
             self.start1.setEnabled(True)
         else :
             self.start1.setEnabled(False)
-            print(self.dirs)
+            print(self.surfdirs)
+            print("Pas de fichier sélectionné")
+        if self.supdirs is not None and (self.supdirs and len(self.supdirs) > 0):
+            print(self.supdirs)
+            self.startautocut.setEnabled(True)
+        else :
+            self.startautocut.setEnabled(False)
+            print(self.supdirs)
             print("Pas de fichier sélectionné")
 
     
@@ -402,17 +470,51 @@ class Ui_MainWindow(object):
 
         return pointsFile, surfaceFile, surfaceFileCut
 
-    def update_list(self,pointFile,surfaceFile,surfaceFileCut):
+    def user_select_cut(self):
+        supFile, _ = QFileDialog.getOpenFileName(
+            None, "Select the stl file", "~/", "STL Files (*.stl)"
+        )
+        if not supFile:
+            raise FileNotFoundException("No support file selected")
+        return supFile
+
+    def update_surf_list(self,pointFile,surfaceFile,surfaceFileCut):
         self.listWidget.addItems(["POINT FILE : " + str(pointFile) + " SURFACE FILE : "+ str(surfaceFile) + " SURFACE FILE CUT : "+ str(surfaceFileCut)])
+
+    def update_sup_list(self,supFile):
+        self.listWidget.addItems(["SUPPORT FILE : " + str(supFile)])
 
     def manu_user_select_files(self):
         try:
             pointsFile, surfaceFile, surfaceFileCut = self.user_select_files()
-            self.dirs.append((pointsFile, surfaceFile, surfaceFileCut))
+            self.surfdirs.append((pointsFile, surfaceFile, surfaceFileCut))
             self.refnum.append(self.refsurfselect.value())
-            self.update_list(pointsFile,surfaceFile,surfaceFileCut)
+            self.update_surf_list(pointsFile,surfaceFile,surfaceFileCut)
         except FileNotFoundException as e:
             print(e)
+    
+    def manu_user_select_cut(self):
+        try:
+            supFile = self.user_select_cut()
+            self.supdirs.append(supFile)
+            self.teethcount.append(self.supteethN.value())
+            self.update_sup_list(supFile)
+        except FileNotFoundException as e:
+            print(e)
+
+    def auto_user_select_cut(self):
+        root_directory = QFileDialog.getExistingDirectory(
+            None, "Please select a directory containing your files", "~/"
+        )
+        
+        if root_directory:
+            all_files = [f for f in os.listdir(root_directory) if f.endswith(".stl")]
+            self.supdirs = [os.path.join(root_directory, f) for f in all_files]
+            self.teethcount += [self.supteethN.value()]*len(self.supdirs)
+            for supFile in self.supdirs:
+                self.update_sup_list(supFile)
+        else:
+            print("Aucun dossier sélectionné")
 
     def auto_user_select_files(self):
         root_directory = QFileDialog.getExistingDirectory(
@@ -457,12 +559,22 @@ class Ui_MainWindow(object):
                     # Trie les fichiers pour toujours avoir l'ordre suivant : .txt, .ply, _cut.ply
                     files.sort(key=lambda x: (not x.endswith(".txt"), not x.endswith(".ply"), "cut" in x))
                     triplets.append(tuple(files))
-                    self.update_list(files[0],files[1],files[2])
+                    self.update_surf_list(files[0],files[1],files[2])
 
-            self.dirs = triplets
-            self.refnum = [self.refsurfselect.value()]*len(self.dirs)
+            self.surfdirs = triplets
+            self.refnum += [self.refsurfselect.value()]*len(self.surfdirs)
         else:
             print("Aucun dossier sélectionné")
+    
+    def select_config(self):
+        
+        cffile,_ = QFileDialog.getOpenFileName(
+            None, "Select the config file", "~/", "Config Files (*.cfg)"
+        )
+        if not cffile:
+            self.display_error("No config file was selected. Please try again.")
+        else:
+            self.configdir = cffile
     
     def open_file_explorer(self):
         print("open : " + self.zipdir)
@@ -484,7 +596,7 @@ class Ui_MainWindow(object):
          
         if filename:
             with open(filename, 'wb') as f:
-                pickle.dump({'refnum': self.refnum, 'dirs': self.dirs}, f) 
+                pickle.dump({'refnum': self.refnum, 'dirs': self.surfdirs, 'config' : self.configdir,'supdirs' : self.supdirs, 'teethcount' : self.teethcount, 'maildir' : self.maildir }, f) 
     
     def charge(self):
         fname = QFileDialog.getOpenFileName(None, 'Ouvrir fichier', '/', "Pickle files (*.pkl)")
@@ -493,18 +605,33 @@ class Ui_MainWindow(object):
             with open(fname[0], 'rb') as f:
                 data = pickle.load(f)
             self.refnum = data['refnum']
-            self.dirs = data['dirs']
+            self.surfdirs = data['dirs']
+            self.configdir = data['config']
+            self.supdirs = data['supdirs']
+            self.teethcount = data['teethcount']
+            self.maildir = data['maildir']
             self.update_ui()
             
     def update_ui(self):
         self.listWidget.clear()
-        for i in range(len(self.dirs)):
-            self.update_list(self.dirs[i][0],self.dirs[i][1],self.dirs[i][2])
+        for j in range(len(self.supdirs)):
+            self.update_sup_list(self.supdirs[j])
+        for i in range(len(self.surfdirs)):
+            self.update_surf_list(self.surfdirs[i][0],self.surfdirs[i][1],self.surfdirs[i][2])
         if self.refnum is not None and (self.refnum and len(self.refnum) > 0):
             self.refsurfselect.setValue(self.refnum[0])
+        if self.teethcount is not None and (self.teethcount and len(self.teethcount) > 0):
+            self.supteethN.setValue(self.teethcount[0])
         self.on_file_selected()
         #self.openzipdir.setEnabled(True)
 
+    def display_error(self, message):
+        msgBox = QMessageBox()
+        msgBox.setIcon(QMessageBox.Critical)
+        msgBox.setText(message)
+        msgBox.setWindowTitle("Error")
+        msgBox.setStandardButtons(QMessageBox.Ok)
+        msgBox.exec()
 
 
 

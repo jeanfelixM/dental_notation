@@ -7,7 +7,7 @@ from os import path, scandir
 from pathlib import Path
 
 import pandas as pd
-from alig.alignement import select_and_align
+from alig.alignement2 import select_and_align
 from conversion_ply_vers_vtk.massConvertion import goconvert
 from deformation.mass_add_colormap import go_color
 from deformation.pairwise_file_edition_freezeCP_reference import atlas_file_edition

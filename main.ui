@@ -563,7 +563,7 @@
      <bool>false</bool>
     </property>
    </widget>
-   <widget class="QPushButton" name="pushButton">
+   <widget class="QPushButton" name="configSelec">
     <property name="geometry">
      <rect>
       <x>230</x>
@@ -576,7 +576,7 @@
      <string>Config</string>
     </property>
    </widget>
-   <widget class="QPushButton" name="pushButton_2">
+   <widget class="QPushButton" name="mailListSelec">
     <property name="geometry">
      <rect>
       <x>320</x>
@@ -602,7 +602,7 @@
      <string>Envoie des mails</string>
     </property>
    </widget>
-   <widget class="QPushButton" name="pushButton_3">
+   <widget class="QPushButton" name="SENDMAIL">
     <property name="geometry">
      <rect>
       <x>230</x>

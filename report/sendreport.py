@@ -16,20 +16,36 @@ def read_config(file_path):
     files = config.read(file_path)
     if file_path not in files:
         raise ConfigFileNotFoundError("Le fichier de configuration ne peut pas être lu ou n'existe pas.")
+    
+    # Valeurs par défaut
+    default_smtp_server = 'smtp.gmail.com'
+    default_smtp_port = 587
+
     try:
-        return config['email']['username'], config['email']['password']
+        email_username = config['email']['username']
+        email_password = config['email']['password']
+
+        # Utiliser les valeurs du fichier de configuration si elles existent, sinon utiliser les valeurs par défaut
+        smtp_server = config.get('smtp', 'server', fallback=default_smtp_server)
+        smtp_port = int(config.get('smtp', 'port', fallback=default_smtp_port))
+
+        return email_username, email_password, smtp_server, smtp_port
     except configparser.ParsingError:
         print("Le fichier de configuration ne peut pas être analysé.")
-        return None, None
+        return None, None, default_smtp_server, default_smtp_port
+    except ValueError:  # Pour gérer les ports mal formatés (non numériques)
+        print("Erreur de format dans le fichier de configuration.")
+        return email_username, email_password, default_smtp_server, default_smtp_port
 
-def send_emails(csv_file, config_file, pdf_directory):
+
+def send_emails(csv_file, username, password, smtp_server, smtp_port, pdf_directory):
     # Lire le fichier CSV
     df = pd.read_csv(csv_file)
 
-    # Paramètres du serveur de messagerie
-    smtp_server = 'smtp.gmail.com'
-    smtp_port = 587  # Utilisez le port 465 pour SSL
-    username, password = read_config(config_file)
+    # Vérifiez si il y a un problème avec le fichier de configuration
+    if None in (username, password, smtp_server, smtp_port):
+        print("Erreur lors de la lecture du fichier de configuration.")
+        return
 
     # Connexion au serveur de messagerie
     server = smtplib.SMTP(smtp_server, smtp_port)
@@ -58,9 +74,12 @@ def send_emails(csv_file, config_file, pdf_directory):
     # Fermer la connexion au serveur de messagerie
     server.quit()
 
+def send_emails_from_config(csv_file, config_file, pdf_directory):
+    username, password, smtp_server, smtp_port = read_config(config_file)
+    send_emails(csv_file, username, password, smtp_server, smtp_port, pdf_directory)
+
 def main():
-    # Utilisation :
-    send_emails('fichier.csv', 'config.ini', '/path/to/pdf/directory')
+    send_emails_from_config('fichier.csv', 'config.ini', '/path/to/pdf/directory')
     
     
 if __name__ == '__main__':

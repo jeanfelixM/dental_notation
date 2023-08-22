@@ -20,13 +20,18 @@ def create_report(name, images,csv_path,i,grade = 100, comments = "Parfait",dir 
 
     header_image = "ut3.png"
 
-    # Nom de l'étudiant
-    story = [Image(header_image, height= doc.height/12 ,width=doc.width/3)]
+    # Créer l'image et les Paragraphs
+    img = Image(header_image, height=doc.height/12, width=doc.width/3)
+    student_name = Paragraph(f"Nom: {name}", styles["Heading3"])
+    hspace = Spacer(0, 0)
+    student_class = Paragraph(f"Classe : {classe}", styles["Heading3"])
 
-    story.append(Spacer(1, 12))
-    
-    story.append(Paragraph(f"Nom de l'étudiant: {name}", styles["Heading1"]))
-    story.append(Paragraph(f"Classe : {classe}", styles["Heading3"]))
+    # Créer un tableau pour positionner l'image à gauche et le texte à droite
+    data = [[img, "", student_name, student_class]]
+    tbl = Table(data, colWidths=[doc.width/4, doc.width/4, doc.width/4, doc.width/4])
+
+    # Ajouter le tableau à l'histoire
+    story = [tbl]
     story.append(Paragraph(f"Dent : {dent} | numéro dent : {ndent}", styles["Heading4"]))
     
     # Barème
