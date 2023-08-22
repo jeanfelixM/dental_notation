@@ -90,4 +90,4 @@ def create_form(where, excel_path='grille.xlsx'):
     c.save()
 
 # Utilisation de la fonction
-create_form('', 'grille.xlsx')
+#create_form('', 'grille.xlsx')

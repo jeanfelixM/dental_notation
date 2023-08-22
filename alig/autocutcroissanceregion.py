@@ -7,9 +7,9 @@ import open3d as o3d
 import copy
 import os
 import time
-from aux.MeshOperation import clean_mesh, combine_meshes, cut_mesh_with_plane, find_threshold, fit_plane_to_mesh, getCircles, getCircles2, normale, process_meshes, pyvslice, remove_selected_zone, select_lowest_points, translate_plane, visualize_zone
-from aux.helper import switch_index
-from aux.o3dRendering import create_arrow, create_transparent_sphere
+from helper.MeshOperation import clean_mesh, combine_meshes, cut_mesh_with_plane, find_threshold, fit_plane_to_mesh, getCircles, getCircles2, normale, process_meshes, pyvslice, remove_selected_zone, select_lowest_points, translate_plane, visualize_zone
+from helper.helper import switch_index
+from helper.o3dRendering import create_arrow, create_transparent_sphere
 from pathlib import Path
 
 from pathlib import Path

@@ -10,7 +10,7 @@ import pyvista as pv
 from sklearn.neighbors import KDTree
 import vtk
 from sklearn.cluster import KMeans
-from aux.ImageOperation import findCenter, keepCircle, preprocess
+from helper.ImageOperation import findCenter, keepCircle, preprocess
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
 
 def slice2image(points, normal, point_on_plane, image_size):
