@@ -7,7 +7,7 @@ from os import path, scandir
 from pathlib import Path
 
 import pandas as pd
-from alig.alignement2 import select_and_align
+from alig.alignement import select_and_align
 from conversion_ply_vers_vtk.massConvertion import goconvert
 from deformation.mass_add_colormap import go_color
 from deformation.pairwise_file_edition_freezeCP_reference import atlas_file_edition
@@ -131,7 +131,8 @@ def findref(directory: str, refnum: int) -> str:
                 #print(excluded)
                 file_num = int(re.findall(r'(\d+)\.vtk$', file.name)[0])
 
-                if file_num == refnum:
+                if file_num == refnum: #eventuellement rajouter modulo le nb de dents du support ici (ou alors changer le refnum dans mainui plutôt (finalement c nul de changer dans mainui, go le faire ici))
+                    #nn enft ya un truc bizarre si les supports ont pas la même taille
                     print("Surface de référence trouvée : " + str(file))
                     return str(file)
 
@@ -167,13 +168,13 @@ def findScreenshots(directory, num):
 def get_pdf_path(pdf_directory, numéro):
     pass
 
-def create_pdf(dir):
+def create_pdf(dir,curnum=0):
     infos = file_to_dict(path.join(dir,"infos.ods"))
     Path(path.join(dir,"pdf")).mkdir(exist_ok=True)
     for i in infos:
         print("on cheche dans" + str(Path(path.join(dir,"screenshots"))))
         images = findScreenshots(Path(path.join(dir,"screenshots")),i)
-        create_report(name = infos[i]['nom'] + " " + infos[i]['prenom'],images = images,csv_path = Path(path.join(dir,"input","resultat_distances_volumes.csv")),i=i,dir = Path(path.join(dir,"pdf/")),ndent=i,classe=infos[i]['classe'],date=infos[i]['date'],dent=infos[i]['type dent'])
+        create_report(name = infos[i]['nom'] + " " + infos[i]['prenom'],images = images,csv_path = Path(path.join(dir,"input","resultat_distances_volumes.csv")),i=i,dir = Path(path.join(dir,"pdf/")),ndent=i+curnum,classe=infos[i]['classe'],date=infos[i]['date'],dent=infos[i]['type dent'])
     pass
 
 def batchstart(dirs,noise,objectkernel,deformkernel,numref=[1]):

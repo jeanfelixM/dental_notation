@@ -85,7 +85,7 @@ def regularity_calc2(control_points,momenta,kwidth):
 
 
 def deformation_read(dirname,dirnames,cpt):
-    print("Surface %d / %d \n" % (cpt + 1, len(dirnames))) #ya un pb ici
+    print("Surface %d / %d \n" % (cpt, len(dirnames))) #ya un pb ici
     root_directory = Path(dirname)
     xml_parameters = XmlParameters()
     xml_parameters.read_all_xmls(root_directory / 'model.xml', root_directory / 'data_set.xml', root_directory /
@@ -103,7 +103,7 @@ def update_mesh(pcd, points,translation, cpt):
     for point in points:
         #print("les points : " + translation[cpt+1][1:4])
         try:
-            translated_points = np.array(translation[cpt+1][1:4], dtype=float)
+            translated_points = np.array(translation[cpt][1:4], dtype=float)
             pcd.vertices.append(point - translated_points)
         except ValueError:
             pass
@@ -210,10 +210,18 @@ def postprocess(input_directory,reference_surface,translationdir):
 
     scalarsEnd = []
     cpt = 0
-    regularity = np.zeros((len(dirnames)))
-    VolumeTarget = np.zeros((len(dirnames)))
-    VolumeBase = np.zeros((len(dirnames)))
-    VolumeRegistered = np.zeros((len(dirnames)))
+    regularity = np.zeros((len(dirnames))+1)
+    regularity[0] = 0
+    VolumeTarget = np.zeros((len(dirnames))+1)
+    VolumeTarget[0] = 0
+    VolumeBase = np.zeros((len(dirnames))+1)
+    VolumeBase[0] = 0
+    VolumeRegistered = np.zeros((len(dirnames))+1)
+    VolumeRegistered[0] = 0
+    maxi = np.zeros((len(dirnames))+1)
+    maxi[0] = 0
+    mini = np.zeros((len(dirnames))+1)
+    mini[0] = 0
     screenshotOutput = path.join(input_directory, '../screenshots')
     Path.mkdir(Path(screenshotOutput), exist_ok=True)
 
@@ -233,6 +241,7 @@ def postprocess(input_directory,reference_surface,translationdir):
 
     for dirname in dirnames: #attention !!!! c'est pas dans l'ordre des translation !!! soit adapter la translation à appliquer, soit changer l'ordre de lecture des dossiers
         if path.isdir(dirname):
+            cpt = currentTeethInd(dirname) - 1
             bn = path.basename(dirname)
 
             momenta,control_points,xml_parameters = deformation_read(dirname,dirnames,cpt) #on lit les momenta et control_points finaux, ceux qui ont été trouvé par le processus d'optimisation
@@ -246,6 +255,9 @@ def postprocess(input_directory,reference_surface,translationdir):
             filename = path.join(dirname, "output", "colormaps",
                                  "DeterministicAtlas__flow__tooth__subject_subj1__tp_0.vtk") #ça prend la dent colormapé 
             pointsBase, facesBase, scalarsBase, VolumeBase[cpt] = read_and_volume(filename)
+            
+            maxi[cpt] = np.max(scalarsBase)
+            mini[cpt] = np.min(scalarsBase)
             
             take_screenshot(pointsBase,facesBase,scalarsBase, bn, screenshotOutput)
             
@@ -268,7 +280,7 @@ def postprocess(input_directory,reference_surface,translationdir):
             #avec ces updates, on accumule dans un mesh les mesh de toutes les dents, pour construire un mesh avec toutes les dents colormappé, remisent à leurs place, et en transparence
             #avec la dent de référence
 
-            cpt += 1
+            
             
     o3d.io.write_triangle_mesh(path.join(input_directory, "resultat.ply"), pcd)
     o3d.io.write_triangle_mesh(path.join(input_directory, "resultatReference.ply"), pcdBase)
@@ -295,15 +307,13 @@ def postprocess(input_directory,reference_surface,translationdir):
 
     with open(path.join(input_directory, 'resultat_distances_volumes.csv'), 'w', encoding='utf-8') as mytxtfile:
         mytxtfile.write(
-        "Folder name; Base name; Target name; Base Volume; Target Volume; Extracted Volume; Registered Volume; Distance (deformation)\n")
+        "Folder name; Base name; Target name; Base Volume; Target Volume; Extracted Volume; Registered Volume; Deformation; Maximum; Minimum\n")
         cpt = 0
-        for dirname in dirnames:
-            if path.isdir(dirname):
+        for cpt in range(len(dirnames)+1):
                 names = (path.basename(dirname)).split('_to_')
-                mytxtfile.write("%s;%s;%s;%f;%f;%f;%f;%f\n" % (
+                mytxtfile.write("%s;%s;%s;%f;%f;%f;%f;%f;%f\n" % (
                     path.basename(dirname), names[0], names[1], VolumeBase[cpt], VolumeTarget[cpt],
-                    VolumeBase[cpt] - VolumeTarget[cpt], VolumeRegistered[cpt], regularity[cpt]))
-                cpt += 1
+                    VolumeBase[cpt] - VolumeTarget[cpt], VolumeRegistered[cpt], regularity[cpt]),maxi[cpt],mini[cpt])
 
 if __name__ == '__main__':
     input_directory = '/home/jeanfe/Documents/calcul/input'

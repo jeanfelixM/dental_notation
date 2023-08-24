@@ -15,7 +15,7 @@ from report.fillpagegenerator import create_form
 
 
 def create_report(name, images,csv_path,i,grade = 100, comments = "Parfait",dir = ".",classe="1",dent = "molaire",ndent=4,date = datetime.date(2020, 12, 18)):
-    doc = SimpleDocTemplate(str(dir) +"/" + name + str(i) +".pdf", pagesize=A4)
+    doc = SimpleDocTemplate(str(dir) +"/" + name + "_" + str(ndent) +".pdf", pagesize=A4)
     styles = getSampleStyleSheet()
 
     header_image = "ut3.png"

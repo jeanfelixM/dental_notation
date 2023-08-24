@@ -11,7 +11,7 @@ from helper.MeshOperation import clean_mesh, combine_meshes, cut_mesh_with_plane
 from helper.helper import switch_index
 from helper.o3dRendering import create_arrow, create_transparent_sphere
 from pathlib import Path
-
+import pyvista as pv
 from pathlib import Path
 import re
 
@@ -53,7 +53,7 @@ def write_output(new_mesh, meshprep, cercles, ordre,base_prefix="dents", output_
         for j in ordre:
             center = cercles[j]
             # N'écrire que les coordonnées du centre du cercle, pas le rayon
-            f.write(f"{center[0]} {center[1]} {center[2]}\n")
+            f.write("%s %s %s\n" % (center[0], center[1], center[2]))
 
 
 
@@ -366,6 +366,16 @@ def position_finding(meshprep,ninitpoint = 200,shift = 6.55,thickness = 6,comple
     abn,ahn = create_arrow([0,0,1],nnormal,length=10,color = [1,0,1])
     l = [meshprep] + sphere + [ab100,ah100,ab010,ah010,ab001,ah001,abn,ahn]
     o3d.visualization.draw_geometries(l)
+    pl = pv.Plotter()
+     #Création du mesh pyvista
+    pb = np.array(meshprep.vertices)
+    fb = np.array(meshprep.triangles)
+    new_fb = np.column_stack((np.full((fb.shape[0], 1), 3), fb))
+    pyvista_mesh = pv.PolyData(pb, new_fb)
+    for c in cercles:
+        pl.add_mesh(pv.Sphere(radius=1,center=c),color='green')
+    pl.add_mesh(pyvista_mesh)
+    pl.show()
     if returnSphere:
         return cerclesteeth,sp,nnmesh,cercles
     else:
@@ -389,6 +399,9 @@ def main():
             print("3 points must be selected")
     else :
         mesh,points = read_data(meshdir,pointsdir)
+    
+    mesh.remove_duplicated_vertices() #car le mesh est malformé
+    print("TAILLE DU MESH = " + str(len(mesh.triangles)))
     
     p = points[0].copy()
     pp = (points[0] + points[1] + points[2])/3
@@ -429,7 +442,7 @@ def main():
     clean_mesh(meshprep, min_triangles=4000) #remplacer 4000 par % de triangles à garder en fonction de taille
     o3d.visualization.draw_geometries([meshprep])
     
-    mesh.remove_duplicated_vertices() #car le mesh est malformé
+    
     
     #creer maillage simplifié
     """nb_triangles_cible = int(len(mesh.triangles) * 0.1) #10% de triangles mais à adapter on verra
@@ -492,7 +505,7 @@ def main():
     # Visualisation des clusters
     #visualize_clusters(deleted, labels)
     
-    write_output(nmeshprep,meshprep,cercles,ordre)
+    write_output(nmeshprep,meshprep,cerclesteeth,ordre)
     
     
 

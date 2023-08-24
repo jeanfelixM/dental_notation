@@ -366,6 +366,7 @@ class Ui_MainWindow(object):
         )
         if self.dzipfile is not None and (self.dzipfile and len(self.surfdirs) > 0):
             self.start2.setEnabled(True)
+            print("Voici le fichier selectionné : " + str(self.dzipfile))
         else:
             self.start2.setEnabled(False)
             print(self.dzipfile)
@@ -411,6 +412,7 @@ class Ui_MainWindow(object):
         self.zipdir = path
         self.openzipdir.setEnabled(True)
         self.zipacces.setText("Accès à l'archive : " + path)
+        self.save()
         # Update the UI with the results of the calculation
         
     def on_second_calculation_finished(self,path):

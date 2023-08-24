@@ -10,11 +10,21 @@ import time
 from scipy.spatial import cKDTree
 import re
 from collections import defaultdict
+import pyvista as pv
 import  os
+
 
 def minimal_distances_points_to_surface2(points, meshvertices):
     tree = cKDTree(meshvertices)
-    d, _ = tree.query(points, k=1)
+    d, i = tree.query(points, k=1)
+    #print("me when le I : " + str(i))
+    """pyvista_mesh = pv.PolyData(np.asarray(meshvertices))
+    pl = pv.Plotter()
+    pl.add_mesh(pyvista_mesh)
+    pl.add_mesh(pv.Sphere(radius=1.5, center=points[np.argmin(d)]), color="red")
+    for p in points:
+        pl.add_mesh(pv.Sphere(radius=0.5,center = p),color="blue")
+    pl.show()"""
     return d
 
 
@@ -24,7 +34,7 @@ def read_data(pointsFile, surfaceFile, surfaceFileCut):
 
     points = [[float(x) for x in e] for e in points]
     
-    print(points)
+    #print("ON PRINT POINT" + str(points)) #Ils sont récupéré dans le même ordre que l'ordre où c'est écrit dans le fichier, le pb ne vient pas d'ici
 
     mesh = o3d.io.read_triangle_mesh(surfaceFile)
     meshcut = o3d.io.read_triangle_mesh(surfaceFileCut)
@@ -88,35 +98,47 @@ def select_and_align(pointsFile=None, surfaceFile=None, surfaceFileCut=None):
     print("Nombre de points: ", len(points))
 
     for k in range(np.max(a)+1):
-        cutClusterFace = facesCut[np.where(np.array(aCut) == k),]
-        cutClusterVert = np.unique(cutClusterFace)
 
-        verticesCut = verticesCutO[cutClusterVert]
-            
-        d = minimal_distances_points_to_surface2(points, verticesCut)
+        clusterFace = faces[np.where(np.array(a) == k),]
+        clusterVert = np.unique(clusterFace)
+
+        vertices = verticesO[clusterVert]
+
+        d = minimal_distances_points_to_surface2(points, vertices)
            
 
         ind = np.argmin(d)
 
-        #MaxPointsCut = verticesCut[verticesCut[:, 2] == max(verticesCut[:, 2]), :]
+        bary = np.mean(vertices,axis=0)
+        #print("bary est : " + str(bary))
+        curmin = np.Infinity
+        for m in range(np.max(aCut) + 1):
+            
+            cutClusterFace = facesCut[np.where(np.array(aCut) == m),]
+            cutClusterVert = np.unique(cutClusterFace)
 
-        """print("flag est : ", np.sqrt(np.sum(np.square(MaxPoints - MaxPointsCut))) < 0.5)
-        if np.sqrt(np.sum(np.square(MaxPoints - MaxPointsCut))) < 0.5:
-            flag = True
-            break"""
+            verticesCut = verticesCutO[cutClusterVert]
 
-        
 
-        ajeterCut = np.setdiff1d(facesuniqueCut, cutClusterVert)
+            barycut = np.mean(verticesCut,axis=0)
+            
+            acno =  np.linalg.norm(bary-barycut)
+            #print("La distance du cluster : " + str(k) + " et du cluster : " + str(m) + " est : " + str(np.linalg.norm(bary-barycut)))
+            if acno < curmin:
+                curmin = acno
+                indmin = ind
+                fucMin = facesuniqueCut
+                ccvMin = cutClusterVert
+                #print("la nouvelle distance est  : " + str(curmin) + " qui correspond a l'indice "+ str(indmin))
+                
+        ajeterCut = np.setdiff1d(fucMin, ccvMin)
         meshselCut = copy.deepcopy(meshcut)
         meshselCut.remove_vertices_by_index(ajeterCut)
-
-        meshselCut.translate(np.array(points[0]) - np.array(points[ind]))
-        meshend[ind] = meshselCut
-        write_mesh(dn, base, ind, meshselCut)
-            
-        t = (np.array(points[0]) - np.array(points[ind]))
-        listnum.append([ind+1, t[0], t[1], t[2]])
+        meshselCut.translate(np.array(points[0]) - np.array(points[indmin]))
+        meshend[indmin] = meshselCut
+        write_mesh(dn, base, indmin, meshselCut) 
+        t = (np.array(points[0]) - np.array(points[indmin]))
+        listnum.append([indmin+1, t[0], t[1], t[2]])
 
     end = time.time()
 
