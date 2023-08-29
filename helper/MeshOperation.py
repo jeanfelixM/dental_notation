@@ -168,7 +168,7 @@ def pyvslice(mesh, normal, point_on_plane, slice_thickness=0.01, n_slices=30):
     pl = plotterCreate()
     
     imgdebug = imageCreate(pl,slices,viewnorm=vecalig,isZ=isZ)
-    #imageio.imsave('screenshotdebug.png', imgdebug)
+    imageio.imsave('screenshotdebug.png', imgdebug)
     
     print("LONGUEUR DE SLICES : " + str(len(slices)))
     for s in slices:
@@ -337,7 +337,7 @@ def getCircles(mesh, normal, point_on_plane, complete = False,image_size=250, sl
     
     return cercles
 
-def isTeeth(min_coords,max_coords,seuil = 4):
+def isTeeth(min_coords,max_coords,seuil = 5):
     distance = np.linalg.norm(min_coords-max_coords)
     if distance > seuil:
         return True
@@ -545,25 +545,27 @@ def fit_plane_to_mesh(mesh,isPCD = False):
 
 def distance_from_plane(point, plane_normal, point_on_plane):
     """Returns the signed distance from a point to a plane defined by its normal and a point on the plane."""
-    return np.dot(plane_normal, point - point_on_plane)
+    return np.matmul(plane_normal, np.transpose(point - point_on_plane))
 
 def cut_mesh_with_plane(mesh, plane_normal, point_on_plane,up = True):
     """Cuts a mesh with a plane, keeping only the part of the mesh above the plane."""
     vertices = np.asarray(mesh.vertices)
-    distances = np.array([distance_from_plane(vertex, plane_normal, point_on_plane) for vertex in vertices])
+    distances = distance_from_plane(vertices, plane_normal, point_on_plane)
 
     if up:
         vertices_below_plane = vertices[distances > 0]
+        vert_bind = np.where(distances > 0)[0]
     else :
         vertices_below_plane = vertices[distances < 0]
-    vertices_set = set(map(tuple, vertices_below_plane))
+        vert_bind = np.where(distances < 0)[0]
+    """vertices_set = set(map(tuple, vertices_below_plane))
 
     triangles_to_remove = [i for i, triangle in enumerate(mesh.triangles) if any(tuple(mesh.vertices[vertex]) in vertices_set for vertex in triangle)]
 
     triangle_mask = np.zeros(len(mesh.triangles), dtype=bool)
-    triangle_mask[triangles_to_remove] = True
+    triangle_mask[triangles_to_remove] = True"""
 
-    mesh.remove_triangles_by_mask(triangle_mask)
+    mesh.remove_vertices_by_index(np.array(vert_bind))
 
     return mesh
 

@@ -14,7 +14,10 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from PyQt5.QtCore import QThread, pyqtSignal
 from PyQt5.QtWidgets import QMessageBox
 from PyQt5.QtWidgets import QFileDialog
+from PyQt5.QtWidgets import QApplication, QDialog, QVBoxLayout, QTextEdit, QPushButton
+from pyvistaqt import BackgroundPlotter
 from collections import defaultdict
+import pyvista as pv
 import re, os
 import subprocess
 import sys
@@ -80,7 +83,23 @@ class Ui_MainWindow(object):
         self.zipdir = ""
         self.refnum = []
         self.supdirs = []
-        self.teethcount = []
+        self.problemdirs = []
+        self.teethcount = [] #à supprimer (voir note)
+        
+        
+        #Valeurs pour lancer l'autocut
+        self.verif = True
+        self.widget_activated = False
+        self.defining_up_vector = False
+        self.pick_ref_point = False
+        self.closed = False
+        self.selected_points = []
+        
+        self.points = []
+        self.upnormals = []
+        self.refpoints = []
+        
+        
         self.dzipfile = ""
         self.configdir = ""
         self.maildir = ""
@@ -381,15 +400,126 @@ class Ui_MainWindow(object):
         self.second_calculation_thread.calculation_finished.connect(self.on_second_calculation_finished)
         self.second_calculation_thread.start()
     
+    def show_pyvista_window(self,mdir=None,mesh=None,definingUp = False):
+        self.verif = True
+        self.closed = False
+        self.plotter = CBPlotter(self)
+        if mdir:
+            try:
+                self.mesh = pv.read(mdir)
+                self.plotter.add_mesh(self.mesh, show_edges=True, color="lightblue")
+            except:
+                print("Error reading the mesh file")
+        else:
+            try:
+                self.actor = self.plotter.add_mesh(mesh, show_edges=True, color="lightblue")
+            except:
+                print("Error loading the mesh")
+        # Activer la sélection des points
+        #self.plotter.add_orientation_widget(actor=self.mesh,interactive=True)
+        if self.defining_up_vector:
+            self.plotter.add_key_event("a", self.toggle_widget_activation)
+            self.planewidget = self.plotter.add_plane_widget(callback= lambda x: (),interaction_event='always')
+        else:
+            #self.plotter.enable_point_picking(callback=self.picked_callback,show_point=True, color="red", point_size=10,pickable_window=True)
+            self.plotter.add_key_event("b", lambda : ())
+            self.plotter.enable_surface_picking(callback=self.picked_callback,show_point=True, color="red", point_size=20,pickable_window=True)
+    
+    
+    def picked_callback(self, point_coord):
+    
+        self.selected_points.append(point_coord)
+        print(f"Point sélectionné : {point_coord}")
+
+        if not self.defining_up_vector:
+            # Si trois points sont sélectionnés, fermez la fenêtre
+            if len(self.selected_points) == 3:
+                self.close_pyvista_window()
+                # Réinitialisez pour la définition du "haut"
+                self.defining_up_vector = True
+                self.points.append(tuple(self.selected_points))
+                self.selected_points = []
+                self.show_pyvista_window(mesh=self.mesh,definingUp=True)
+                
+    
+    def toggle_widget_activation(self):
+        self.widget_activated = True
+        self.defineUp(self.planewidget.GetNormal(),self.planewidget.GetOrigin())
+    
+    def defineUp(self,normal,origin):
+        if not self.plotter: 
+            print("Plotter is closed, ignoring callback")
+            return
+        if self.widget_activated:
+            print("La normale est : " + str(normal))
+            self.defining_up_vector = False
+            self.selected_points = []
+            self.mesh = None
+            self.upnormals.append(normal)
+            self.widget_activated = False
+            self.closed = True
+            self.close_pyvista_window(finish=True)
+
+
+    def close_pyvista_window(self,finish=False):
+        if finish:
+            self.verif = True
+        else:
+            self.verif = False
+        if self.plotter is not None:
+            try:
+                self.plotter.reset_key_events()
+                self.plotter.clear_plane_widgets()
+                self.plotter.close()
+            except Exception as e:
+                print("Erreur lors de la fermeture du plotter:", e)
+            self.plotter = None
+            
+    def select_points_sup(self,dirs):
+        points = []
+        self.problemdirs = []
+        self.verif = True
+        self.widget_activated = False
+        self.defining_up_vector = False
+        self.pick_ref_point = False
+        self.closed = False
+        for d in dirs:
+            self.show_pyvista_window(d)
+            while (not self.closed):  # La boucle d'attente
+                QApplication.processEvents()
+            if len(self.points) == 0:
+                print("Pas de points sélectionnés")
+                self.problemdirs.append((d,"Pas de points sélectionnés"))
+            if len(self.points[-1]) < 3:
+                print("Problème de sélection des points")
+                self.points.pop()
+                self.problemdirs.append((d,"Problème de sélection des points"))
+            elif len(self.points) != len(self.upnormals):
+                print("Normale pas selectionnée")
+                self.points.pop()
+                self.problemdirs.append((d,"Normale pas selectionnée"))
+            elif len(self.refpoints) != len(self.upnormals):
+                print("Point de référence pas selectionné")
+                self.points.pop()
+                self.upnormals.pop()
+                self.problemdirs.append((d,"Point de référence pas selectionné"))
+            self.closed = False
+        points = list(zip(self.points,self.upnormals,self.refpoints))
+        if len(self.problemdirs) > 0:
+            self.showErrorDialog(self.problemdirs,self.select_points_sup)
+        return points
+            
+    
     def start_cut(self):
+        #self.show_pyvista_window(self.supdirs[0])
         points = self.select_points_sup(self.supdirs)
-        if hasattr(self, 'autocut_thread') and self.autocut_thread.isRunning():
+        """if hasattr(self, 'autocut_thread') and self.autocut_thread.isRunning():
             # Optionally, handle the case where the thread is already running
             print("Déjà en cours")
             return
         self.autocut_thread = AutoCutThread(self.supdirs,points)
         self.autocut_thread.calculation_finished.connect(self.on_autocut_finished)
-        self.autocut_thread.start()
+        self.autocut_thread.start()"""
     
     def start_alig(self):
         if hasattr(self, 'calculation_thread') and self.calculation_thread.isRunning():
@@ -634,6 +764,52 @@ class Ui_MainWindow(object):
         msgBox.setWindowTitle("Error")
         msgBox.setStandardButtons(QMessageBox.Ok)
         msgBox.exec()
+        
+    def showErrorDialog(self,dir_info,retry_function):
+        dialog = QDialog()
+        dialog.setWindowTitle("Erreur")
+        
+        layout = QVBoxLayout()
+        
+        text_edit = QTextEdit()
+        text_edit.setReadOnly(True)
+        
+        # Construire le texte à afficher
+        text = "Les répertoires suivants ont posé problème :\n"
+        for directory, info in dir_info:
+            text += f" - {directory} : {info}\n"
+            
+        text_edit.setPlainText(text)
+        
+        layout.addWidget(text_edit)
+        
+        ok_button = QPushButton("OK")
+        ok_button.clicked.connect(dialog.accept)
+        layout.addWidget(ok_button)
+        
+        retry_button = QPushButton("Réessayer")
+        retry_button.clicked.connect(lambda: retry_function([d[0] for d in dir_info]))
+        layout.addWidget(retry_button)
+        
+        dialog.setLayout(layout)
+        dialog.exec()    
+    
+
+class CBPlotter(BackgroundPlotter):
+    def __init__(self,mw, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.mw = mw
+        
+    
+    def closeEvent(self, event):
+        print("La fenêtre est en train de se fermer")
+        if self.mw.verif:
+            self.mw.closed = True
+        else:
+            self.mw.closed = False
+        # Insérez ici votre propre logique
+        super().closeEvent(event)  # Ne pas oublier d'appeler la méthode parente
+
 
 
 

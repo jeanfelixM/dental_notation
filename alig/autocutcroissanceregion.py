@@ -57,7 +57,7 @@ def write_output(new_mesh, meshprep, cercles, ordre,base_prefix="dents", output_
 
 
 
-def augmenterzone(mesh,points,thresholddot = 0.35,thresholddist = 5,supnormal = np.array([0, 1, 0]),kvoisin = 64,affiche = True):
+def augmenterzone(mesh,points,thresholddot = 0.35,thresholddist = 5,supnormal = np.array([0, 1, 0]),kvoisin = 64,affiche = True,vert=False):
     
     vertices = np.asarray(mesh.vertices)
     tree = cKDTree(vertices)
@@ -94,7 +94,9 @@ def augmenterzone(mesh,points,thresholddot = 0.35,thresholddist = 5,supnormal = 
                 neighbor = tuple(vertices[index])
                 if neighbor not in visited:
                     visited.add(neighbor)
-                    if pointvalide(index,normals,thresholddot,thresholddist,distorig = dist,distindex=cur,ground_normal=supnormal):
+                    dvert = np.abs(np.dot(vertices[index] - point,supnormal))
+                    #print("distance verticale = " + str(dvert))
+                    if pointvalide(index,normals,thresholddot,thresholddist,distorig = dist,distindex=cur,ground_normal=supnormal,vert=vert,dvert=dvert):
                         stack.append(vertices[index])
                         zonefinale.add(tuple(vertices[index]))
                 cur += 1
@@ -106,14 +108,20 @@ def augmenterzone(mesh,points,thresholddot = 0.35,thresholddist = 5,supnormal = 
         visualize_zone(mesh, zonefinale, coord_to_index)
     return zonefinale
 
-def pointvalide(index,normals,thresholddot,thresholddist,distorig,distindex,ground_normal = np.array([0, 1, 0])):
+def pointvalide(index,normals,thresholddot,thresholddist,distorig,distindex,ground_normal = np.array([0, 1, 0]),vert=False,dvert=0):
+    #print("vert est : " + str(vert))
     normal = normals[index]
     if np.dot(normal, ground_normal) < thresholddot:
         return False
-    elif distorig[distindex] > thresholddist:
-        return False
+    #print("on est apres dot")
+    if vert:
+        if dvert > thresholddist:
+            #print("avec la distance verticale " + str(dvert) + "on renvoie False")
+            return False
     else:
-        return True
+        if distorig[distindex] > thresholddist:
+            return False
+    return True
                     
 
 def read_data(meshFile,pointsFile):
@@ -299,12 +307,12 @@ def position_finding(meshprep,ninitpoint = 200,shift = 6.55,thickness = 6,comple
     for cluster in range(num_clusters):
         #print("Cluster " + str(cluster) + "...")
         
-        clust = copy.deepcopy(meshprep)
+        # Récupère les indices des triangles pour ce cluster
         triang = np.asarray(meshprep.triangles)[np.where(np.array(clus) == cluster),]
         cutClusterVert = np.unique(triang)
-        facesuniqueCut = np.unique(np.asarray(meshprep.triangles))
-        ajeter = np.setdiff1d(facesuniqueCut, cutClusterVert)
-        clust.remove_vertices_by_index(ajeter)
+        
+        # Récupère les sommets uniques pour ces triangles
+        clust = meshprep.select_by_index(cutClusterVert)
         ninit = int(len(clust.vertices)/6)
         print("ninit = " + str(ninit))
         init = select_lowest_points(clust,ninit,supnormal)
@@ -410,36 +418,41 @@ def main():
     sign = np.sign(np.dot(normal,[0,1,0])) #c'est un problème........
     p = p + sign*normal*0.51
 
-    zonedel = augmenterzone(mesh,points,thresholddot = 0.80,thresholddist = 10,supnormal = sign*normal)
+    zonedel = augmenterzone(mesh,points,thresholddot = 0.80,thresholddist = 0.5,supnormal = sign*normal,vert=True)
     
     meshprep,_ = remove_selected_zone(copy.deepcopy(mesh), zonedel)
 
     meshprep = cut_mesh_with_plane(meshprep,sign*normal,p,up=False)
     meshprep.remove_duplicated_vertices() #car le mesh est malformé
     
-    
+    print("TAILLE DU MESH COUPES = " + str(len(meshprep.triangles)))
     print("ON VA PICK FROM PLANE")
     pointref = pickFromPlane(meshprep, p, sign*normal)
-    
-    meshprep = clean_mesh(meshprep, min_triangles=600) #remplacer 600 par % de triangles à garder en fonction de taille ou alors le truc avec la courbe à 2 pic (valable pour ceux dessous aussi)
-    
+    triangseuil = len(meshprep.triangles)*0.006
+    meshprep = clean_mesh(meshprep, min_triangles=triangseuil) #remplacer 600 par % de triangles à garder en fonction de taille ou alors le truc avec la courbe à 2 pic (valable pour ceux dessous aussi)
+    print("LONGUEUR MESHPREP APRES CLEAN : "+ str(len(meshprep.triangles)))
     o3d.visualization.draw_geometries([meshprep])
     
     meshptitsupp = copy.deepcopy(meshprep)
-    meshptitsupp = clean_mesh(meshptitsupp, min_triangles=600) #remplacer 600 par % de triangles à garder en fonction de taille
+    meshptitsupp = clean_mesh(meshptitsupp, min_triangles=triangseuil) #remplacer 600 par % de triangles à garder en fonction de taille
     cerclesteeth,sp,nmeshprep,cercles = position_finding(meshptitsupp,complete=True,thickness=10,shift=3.5,supnormal=sign*normal,returnSphere=True)
     
     nmeshprep.compute_vertex_normals()
     
+    print("TAILLE DU N MESH = " + str(len(nmeshprep.triangles)))
+    
     print("affichage du nouveau meshprep experimental")
     o3d.visualization.draw_geometries([nmeshprep])
     
-    
-    clean_mesh(nmeshprep, min_triangles=1000,autofind=False) #remplacer 4000 par % de triangles à garder en fonction de taille
+    nmeshts = len(nmeshprep.triangles)*0.015
+    print("le seuil sera alors de : " + str(nmeshts))
+    clean_mesh(nmeshprep, min_triangles=nmeshts,autofind=False) #remplacer 4000 par % de triangles à garder en fonction de taille
     print("affichage du nouveau meshprep experimental apres clean")
     o3d.visualization.draw_geometries([nmeshprep])
     
-    clean_mesh(meshprep, min_triangles=4000) #remplacer 4000 par % de triangles à garder en fonction de taille
+    meshpss = len(nmeshprep.triangles)*0.055
+    print("le seuil sera alors de : " + str(meshpss))
+    clean_mesh(meshprep, min_triangles=meshpss) #remplacer 4000 par % de triangles à garder en fonction de taille
     o3d.visualization.draw_geometries([meshprep])
     
     
