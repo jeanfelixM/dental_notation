@@ -1,8 +1,0 @@
-<?xml version="1.0"?>
-<data-set>
-    <subject id="subj1">
-        <visit id="experiment">
-            <filename object_id="tooth">../../surfaces/dents_67_001.vtk</filename>
-        </visit>
-    </subject>
-</data-set>

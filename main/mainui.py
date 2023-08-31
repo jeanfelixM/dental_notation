@@ -886,6 +886,9 @@ class Ui_MainWindow(object):
             self.update_surf_list(self.surfdirs[i][0],self.surfdirs[i][1],self.surfdirs[i][2])
         if self.refnum is not None and (self.refnum and len(self.refnum) > 0):
             self.refsurfselect.setValue(self.refnum[0])
+        if self.dzipfile is not None and (self.dzipfile and len(self.surfdirs) > 0) and self.infodir is not None and self.infodir:
+            self.start2.setEnabled(True)
+            print("Voici le fichier selectionné : " + str(self.dzipfile))
         self.on_file_selected()
         #self.openzipdir.setEnabled(True)
 
