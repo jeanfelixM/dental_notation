@@ -1,20 +1,32 @@
 
 
 
+import os
 import re
 import zipfile
 from os import path, scandir
 from pathlib import Path
-
+import open3d as o3d
 import pandas as pd
 from alig.alignement import select_and_align
+from alig.autocutcroissanceregion import autocut
 from conversion_ply_vers_vtk.massConvertion import goconvert
 from deformation.mass_add_colormap import go_color
 from deformation.pairwise_file_edition_freezeCP_reference import atlas_file_edition
 from deformation.postprocessing import postprocess
 from report.reportgenerator import create_report
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
+import sys
+import pandas as pd
+import configparser
+import os
 
 
+class ConfigFileNotFoundError(Exception):
+    pass
 
 
 def create_start_script(init_path, root_path, directory):
@@ -62,7 +74,7 @@ echo "Tous les scripts ont été exécutés avec succès"
     # Construire le chemin complet vers le fichier
     file_path = path.join(directory, 'start.sh')
 
-    with open(file_path, 'w',encoding='utf-8') as f:
+    with open(file_path,  'w',newline='\n',encoding='utf-8') as f:
         f.write(bash_script)
         
     return file_path
@@ -79,7 +91,7 @@ conda activate deformetrica
     # Construire le chemin complet vers le fichier
     file_path = path.join(directory, 'init.sh')
 
-    with open(file_path, 'w',encoding='utf-8') as f:
+    with open(file_path, 'w',newline='\n',encoding='utf-8') as f:
         f.write(script)
     
     return file_path
@@ -142,6 +154,31 @@ def findref(directory: str, refnum: int) -> str:
                 continue
     return ""
 
+def shorten_filename(directory):
+    for filename in os.listdir(directory):
+        # Extrait seulement la première lettre de chaque mot
+        new_name = ''.join(word[0] for word in filename.split('_'))
+        
+        # Ajoute l'extension de fichier au nouveau nom
+        extension = Path(filename).suffix
+        new_name += extension
+        
+        # Renomme le fichier
+        os.rename(os.path.join(directory, filename), os.path.join(directory, new_name))
+
+def extract_ord_number(folder_path):
+    folder_name = path.basename(folder_path)  # Utilise os.path.basename pour obtenir le nom du dossier
+    match = re.search(r'_ord(\d+)_', folder_name)
+    if match:
+        return int(match.group(1))
+    return 0  # Retourne 0 si '_ordN_' n'est pas trouvé
+
+def count_vtk_files(directory):
+    count = 0
+    for filename in os.listdir(directory):
+        if filename.endswith(".vtk"):
+            count += 1
+    return count
 
 def findScreenshots(directory, num):
     views = ["distal", "mesial", "occlusal", "vestibulaire_oblique","oblique"]
@@ -165,17 +202,106 @@ def findScreenshots(directory, num):
     return matching_files
 
 
-def get_pdf_path(pdf_directory, numéro):
+def get_pdf_path(pdf_directory, numero):
+    # Convertir le chemin du dossier en objet Path
+    root_path = Path(pdf_directory)
+    
+    # Vérifier si le chemin donné existe et est un dossier
+    if not root_path.exists() or not root_path.is_dir():
+        print("Le chemin spécifié n'est pas un dossier valide.")
+        return ""
+    
+    # Parcourir tous les sous-dossiers
+    for subdir in root_path.iterdir():
+        if subdir.is_dir():
+            # Chercher le dossier "pdf" dans le sous-dossier courant
+            pdf_folder = subdir / "pdf"
+            
+            # Vérifier si le dossier "pdf" existe
+            if pdf_folder.exists() and pdf_folder.is_dir():
+                
+                # Chercher les fichiers PDF dans le dossier "pdf"
+                for pdf_file in pdf_folder.glob("*.pdf"):
+                    
+                    # Vérifier si le numéro est dans le nom du fichier
+                    if str(numero) in pdf_file.name:
+                        return str(pdf_file)
+    print("Aucun fichier PDF contenant ce numéro n'a été trouvé.")
+    return ""
+
+def create_pdf(dir,curnum=0,infodir="./infos.ods",n=0):
+    infos = file_to_dict(infodir)
+    Path(path.join(dir,"pdf")).mkdir(exist_ok=True)
+    for i in range(1,n):
+        print("on cheche dans" + str(Path(path.join(dir,"screenshots"))))
+        images = findScreenshots(Path(path.join(dir,"screenshots")),i+1)
+        print("On a curnum qui est " + str(curnum)+ "et donc on cherchera a l'indice " + str(i+curnum))
+        i = i + curnum
+        create_report(name = infos[i]['nom'] + " " + infos[i]['prenom'],images = images,csv_path = Path(path.join(dir,"input","resultat_distances_volumes.csv")),i=i-curnum,dir = Path(path.join(dir,"pdf/")),ndent=i,classe=infos[i]['classe'],date=infos[i]['date'],dent=infos[i]['type dent'])
     pass
 
-def create_pdf(dir,curnum=0):
-    infos = file_to_dict(path.join(dir,"infos.ods"))
-    Path(path.join(dir,"pdf")).mkdir(exist_ok=True)
-    for i in infos:
-        print("on cheche dans" + str(Path(path.join(dir,"screenshots"))))
-        images = findScreenshots(Path(path.join(dir,"screenshots")),i)
-        create_report(name = infos[i]['nom'] + " " + infos[i]['prenom'],images = images,csv_path = Path(path.join(dir,"input","resultat_distances_volumes.csv")),i=i,dir = Path(path.join(dir,"pdf/")),ndent=i+curnum,classe=infos[i]['classe'],date=infos[i]['date'],dent=infos[i]['type dent'])
-    pass
+def read_config(file_path):
+    config = configparser.ConfigParser()
+    files = config.read(file_path)
+    if file_path not in files:
+        raise ConfigFileNotFoundError("Le fichier de configuration ne peut pas être lu ou n'existe pas.")
+    
+    # Valeurs par défaut
+    default_smtp_server = 'smtp.gmail.com'
+    default_smtp_port = 587
+
+    try:
+        email_username = config['email']['username']
+        email_password = config['email']['password']
+
+        # Utiliser les valeurs du fichier de configuration si elles existent, sinon utiliser les valeurs par défaut
+        smtp_server = config.get('smtp', 'server', fallback=default_smtp_server)
+        smtp_port = int(config.get('smtp', 'port', fallback=default_smtp_port))
+
+        return email_username, email_password, smtp_server, smtp_port
+    except configparser.ParsingError:
+        print("Le fichier de configuration ne peut pas être analysé.")
+        return None, None, default_smtp_server, default_smtp_port
+    except ValueError:  # Pour gérer les ports mal formatés (non numériques)
+        print("Erreur de format dans le fichier de configuration.")
+        return email_username, email_password, default_smtp_server, default_smtp_port
+
+
+def send_emails(csv_file, username, password, smtp_server, smtp_port, pdf_directory):
+    # Lire le fichier CSV
+    df = pd.read_csv(csv_file)
+
+    # Vérifiez si il y a un problème avec le fichier de configuration
+    if None in (username, password, smtp_server, smtp_port):
+        print("Erreur lors de la lecture du fichier de configuration.")
+        return
+
+    # Connexion au serveur de messagerie
+    server = smtplib.SMTP(smtp_server, smtp_port)
+    server.starttls()  # Enlevez cette ligne si vous utilisez SSL
+    server.login(username, password)
+
+    # Parcourir les lignes du dataframe
+    for index, row in df.iterrows():
+        msg = MIMEMultipart()
+        msg['From'] = username
+        msg['To'] = row['email']
+        msg['Subject'] = 'Evaluation TP Dent'
+
+        # Attacher le fichier PDF
+        filename = get_pdf_path(pdf_directory, row['numéro'])
+        with open(filename, 'rb') as f:
+            part = MIMEBase('application', 'octet-stream')
+            part.set_payload(f.read())
+        encoders.encode_base64(part)
+        part.add_header('Content-Disposition', 'attachment; filename="{}"'.format(os.path.basename(filename)))
+        msg.attach(part)
+
+        # Envoyer l'email
+        server.send_message(msg)
+
+    # Fermer la connexion au serveur de messagerie
+    server.quit()
 
 def batchstart(dirs,noise,objectkernel,deformkernel,numref=[1]):
     #alignement (faire un mode manuel (exactement comment c fait maintenant) et un mode semi auto (coupure automatique juste faut 3 points manuel))
@@ -223,7 +349,7 @@ def batchstart(dirs,noise,objectkernel,deformkernel,numref=[1]):
    
 #deformetrica réalisé
         
-def batchend(zipdir,refnum):
+def batchend(zipdir,refnum,infodir):
     
     print("Décompression ...")
     #dezipage  
@@ -231,7 +357,12 @@ def batchend(zipdir,refnum):
         
     subfolders = [f.path for f in scandir(workdir) if f.is_dir()]
 
-    for subfolder,ref in zip(subfolders,refnum):         
+    zipped = zip(subfolders, refnum)
+    sorted_pairs = sorted(zipped, key=lambda x: extract_ord_number(x[0]))   
+
+    currCount = 0
+
+    for subfolder,ref in sorted_pairs:
             
         #mass_add_colormap
         print("Ajout de la colormap ...")   
@@ -242,9 +373,40 @@ def batchend(zipdir,refnum):
         postprocess(input_directory=Path(path.join(subfolder,"input")), reference_surface=findref(subfolder,ref), translationdir = path.join(subfolder,"translations.csv"))
 
         #create pdf
-        create_pdf(subfolder)
+        create_pdf(subfolder,curnum=currCount,infodir=infodir,n= count_vtk_files(Path(path.join(subfolder,"surfaces"))) )
+        
+        currCount += count_vtk_files(Path(path.join(subfolder,"surfaces"))) - 1
         
         
+def fullautocut(dirs,points,debug):
+    paths = []
+    for i, (d, (points, normal, ref)) in enumerate(zip(dirs, points)):
+        od = path.dirname(d)
+        bn = path.basename(d)
+        base = path.splitext(bn)[0]
+        
+        genprefix = "ts" + base 
+        
+        #final_prefix = f"{genprefix}_ord{i}_"
+        final_prefix = genprefix
+        mesh = o3d.io.read_triangle_mesh(d)
+        rpath = autocut(mesh=mesh,points=points,up=normal,pointref=ref,debug=debug,base_prefix=final_prefix,output_dir=od)
+        paths.append(rpath)
+    print("Autocut terminé...")
+    return paths
+        
+def sendmail(configdir,maildir,prepdfdir):
+    print("Envoi des mails ...")
+    
+    allcaclpath = Path(path.join(path.dirname(prepdfdir),"allcalcul"))
+    
+    #pdfdir = Path(path.join(prepdfdir,"pdf")) #qq chose comme ça
+    
+    username, password, smtp_server, smtp_port = read_config(configdir)
+    
+    send_emails(maildir, username, password, smtp_server, smtp_port, pdf_directory=allcaclpath)
+    
+
 
 if __name__ == "__main__":
     #main()

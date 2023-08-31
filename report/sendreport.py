@@ -2,11 +2,15 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
+import sys
 import pandas as pd
 import configparser
 import os
 
-from main.main import get_pdf_path
+#sys.path.append("../")
+#from main.main import get_pdf_path
+
+#from main.main import get_pdf_path
 
 class ConfigFileNotFoundError(Exception):
     pass

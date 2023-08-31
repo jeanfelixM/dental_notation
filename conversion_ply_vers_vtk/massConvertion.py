@@ -34,7 +34,7 @@ def goconvert(directory):
         
         base = path.splitext(list_ply[k])[0]
         #print("truc : " + str(base))
-        remove_metadata(path.join(dirname,"calcul/surfaces/",path.splitext(basename)[0]))
+        remove_metadata(path.join(dirname,"calcul","surfaces",path.splitext(basename)[0]))
 
 
 def remove_metadata(base):
@@ -43,7 +43,7 @@ def remove_metadata(base):
     :param base: base path of the file (without extension)
     """
     file1 = open(base + ".vtk", "r")
-    file2 = open(base + "_tmp_for_metadata_removal.vtk", "w")
+    file2 = open("_tmp_for_metadata_removal.vtk", "w")
 
     cpt = 0
     flag = False
@@ -60,7 +60,7 @@ def remove_metadata(base):
     file1.close()
     file2.close()
     remove(base + ".vtk")
-    rename(base + "_tmp_for_metadata_removal.vtk", base + ".vtk")
+    rename("_tmp_for_metadata_removal.vtk", base + ".vtk")
 
 
 def main():

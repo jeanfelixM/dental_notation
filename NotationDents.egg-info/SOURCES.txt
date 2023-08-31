@@ -6,7 +6,7 @@ NotationDents.egg-info/dependency_links.txt
 NotationDents.egg-info/top_level.txt
 alig/__init__.py
 alig/alignement.py
-alig/alignement2.py
+alig/alignementnaif.py
 alig/alignment_of_teeth.py
 alig/alignment_of_teeth2.py
 alig/aliteor.py

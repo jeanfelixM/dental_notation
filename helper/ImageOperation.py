@@ -3,19 +3,14 @@ from PIL import Image, ImageDraw
 import copy
 import numpy as np
 
-def preprocess(img,n=5,s=11):
+def preprocess(img,n=5,s=11,debug=False):
     img = cv2.GaussianBlur(img,(n,n),s)
-    print("Blured")
-    non_black_pixels = img > 0
-
-    # Régler ces pixels à la valeur maximale
-    #img[non_black_pixels] = 255
-    
-    #img = cv2.GaussianBlur(img,(3,3),4)
-    saveImage(img, "testBlur.png")
+    if debug:
+        print("Blured")
+        saveImage(img, "testBlur.png")
     return img
 
-def keepCircle(img,bary=True,complete=False,inf=600,sup=10000):
+def keepCircle(img,bary=True,complete=False,inf=600,sup=10000,debug=False):
     pixelLeft = set(zip(*np.where(img!=0)))
     barys = []
     
@@ -38,9 +33,11 @@ def keepCircle(img,bary=True,complete=False,inf=600,sup=10000):
         elif bary:
             indices = list(zip(*zone))
             barycenter = np.average(indices, axis=1, weights=img[indices])
-            print("Barycentre:", barycenter)
+            if debug:
+                print("Barycentre:", barycenter)
             barys.append([barycenter[1],barycenter[0]])
-    saveImage(img, "testCleaning.png")
+    if debug:
+        saveImage(img, "testCleaning.png")
     
     if complete:
         if len(barys) == 0:

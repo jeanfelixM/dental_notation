@@ -311,9 +311,9 @@ def postprocess(input_directory,reference_surface,translationdir):
         cpt = 0
         for cpt in range(len(dirnames)+1):
                 names = (path.basename(dirname)).split('_to_')
-                mytxtfile.write("%s;%s;%s;%f;%f;%f;%f;%f;%f\n" % (
+                mytxtfile.write("%s;%s;%s;%f;%f;%f;%f;%f;%f;%f\n" % (
                     path.basename(dirname), names[0], names[1], VolumeBase[cpt], VolumeTarget[cpt],
-                    VolumeBase[cpt] - VolumeTarget[cpt], VolumeRegistered[cpt], regularity[cpt]),maxi[cpt],mini[cpt])
+                    VolumeBase[cpt] - VolumeTarget[cpt], VolumeRegistered[cpt], regularity[cpt],maxi[cpt],mini[cpt]))
 
 if __name__ == '__main__':
     input_directory = '/home/jeanfe/Documents/calcul/input'

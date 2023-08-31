@@ -1,4 +1,5 @@
 import datetime
+from os import path
 from tkinter import Tk, filedialog
 import pandas as pd
 from reportlab.lib.pagesizes import A4
@@ -9,6 +10,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 from PyPDF2 import PdfMerger
+from pathlib import Path
 
 
 from report.fillpagegenerator import create_form
@@ -98,14 +100,19 @@ def create_report(name, images,csv_path,i,grade = 100, comments = "Parfait",dir 
     
     create_form(str(dir) +"/")
     
-    fusion(str(dir),"/"+name + str(i) +".pdf")
+    fusion(dir, name + "_" + str(ndent) +".pdf")
 
-def fusion(chemin,nom):
-    print(chemin)
+def fusion(chemin, nom):
+    chemin = Path(chemin)  # Convertit la chaîne en objet Path
+    fichier_nom = Path(path.join(chemin, nom))  # Utilise l'opérateur / pour joindre les chemins
+    form_pdf = Path(path.join(chemin, "form.pdf"))  # Chemin vers le fichier form.pdf
+    
+    print(fichier_nom)  # Affiche le chemin complet du fichier
+
     merger = PdfMerger()
-    merger.append(chemin + nom)
-    merger.append(chemin + "/form.pdf")
-    merger.write(chemin + nom)
+    merger.append(str(fichier_nom))  # Convertit l'objet Path en chaîne
+    merger.append(str(form_pdf))     # Convertit l'objet Path en chaîne
+    merger.write(str(fichier_nom))   # Convertit l'objet Path en chaîne
     merger.close()
 
 def main():

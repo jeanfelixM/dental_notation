@@ -26,25 +26,44 @@ from alig.convert_pp_to_txt import convert_pp_to_txt
 
 from main import batchstart
 from main import batchend
-
+from main import fullautocut
+from main import sendmail
 
 
 class FileNotFoundException(Exception):
     pass
 
-class AutoCutThread(QThread):
-    calculation_finished = pyqtSignal(tuple)  # Signal to be emitted when calculation is finished
+class SendMailThread(QThread):
+    calculation_finished = pyqtSignal(str)  # Signal to be emitted when calculation is finished
 
-    def __init__(self, dirs,points, parent=None):
+    def __init__(self, configdir, maildir,prepdfdir, parent=None):
         super().__init__(parent)
-        self.dirs = dirs
-        self.points = points
+        self.configdir = configdir
+        self.maildir = maildir
+        self.prepdfdir=prepdfdir
 
     def run(self):
-        # Run your intensive calculation here
-        p = autocut(self.dirs,self.points)
+        # intensive calculation here
+        p = sendmail(self.configdir,self.maildir,self.prepdfdir)
         # After the calculation, emit the finished signal
         self.calculation_finished.emit(p)
+
+class AutoCutThread(QThread):
+    calculation_finished = pyqtSignal(list)  # Signal to be emitted when calculation is finished
+
+    def __init__(self, supdirs,points,debug, parent=None):
+        super().__init__(parent)
+        self.supdirs = supdirs
+        self.points = points
+        self.debug = debug
+
+    def run(self):
+        # intensive calculation here
+        p = fullautocut(self.supdirs,self.points,self.debug)
+        # After the calculation, emit the finished signal
+        self.calculation_finished.emit(p)
+        
+        
 class FirstCalculationThread(QThread):
     calculation_finished = pyqtSignal(str)  # Signal to be emitted when calculation is finished
 
@@ -57,7 +76,7 @@ class FirstCalculationThread(QThread):
         self.numref = numref
 
     def run(self):
-        # Run your intensive calculation here
+        # intensive calculation here
         p = batchstart(self.dirs,self.noise,self.objectkernel,self.deformkernel,self.numref)
         # After the calculation, emit the finished signal
         self.calculation_finished.emit(p)
@@ -66,14 +85,15 @@ class FirstCalculationThread(QThread):
 class SecondCalculationThread(QThread):
     calculation_finished = pyqtSignal(str)  # Signal to be emitted when calculation is finished
     
-    def __init__(self, dzipfile, refnum,parent=None):
+    def __init__(self, dzipfile, refnum,infodir,parent=None):
         super().__init__(parent)
         self.dzipfile = dzipfile
         self.refnum = refnum
+        self.infodir = infodir
     
     def run(self):
-        # Run your intensive calculation here
-        p = batchend(self.dzipfile,self.refnum)
+        # intensive calculation here
+        p = batchend(self.dzipfile,self.refnum,self.infodir)
         # After the calculation, emit the finished signal
         self.calculation_finished.emit(p)
 
@@ -94,6 +114,8 @@ class Ui_MainWindow(object):
         self.pick_ref_point = False
         self.closed = False
         self.selected_points = []
+        self.temppoints = [] #pour le retry
+        self.accepteddirs = []
         
         self.points = []
         self.upnormals = []
@@ -101,10 +123,13 @@ class Ui_MainWindow(object):
         
         
         self.dzipfile = ""
+        self.infodir = ""
         self.configdir = ""
         self.maildir = ""
+        
+        
         icon = QtGui.QIcon()
-        icon.addPixmap(QtGui.QPixmap("../../../Téléchargements/tooth2.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
+        icon.addPixmap(QtGui.QPixmap("./ut3.png"), QtGui.QIcon.Normal, QtGui.QIcon.Off)
         MainWindow.setObjectName("MainWindow")
         MainWindow.resize(733, 728)
         self.centralwidget = QtWidgets.QWidget(MainWindow)
@@ -159,6 +184,12 @@ class Ui_MainWindow(object):
         self.selectiontype2.setObjectName("selectiontype2")
         self.selectiontype2.addItem("")
         self.selectiontype2.addItem("")
+        self.debugtype = QtWidgets.QComboBox(self.cuttab)
+        self.debugtype.setGeometry(QtCore.QRect(100, 165, 90, 40))
+        self.debugtype.setObjectName("debugtype")
+        self.debugtype.addItem("")
+        self.debugtype.addItem("")
+        self.debugtype.addItem("")
         self.startautocut = QtWidgets.QPushButton(self.cuttab)
         self.startautocut.setGeometry(QtCore.QRect(20, 130, 191, 31))
         self.startautocut.setObjectName("startautocut")
@@ -317,6 +348,8 @@ class Ui_MainWindow(object):
         self.startautocut.clicked.connect(self.start_cut)
         self.clearbox.stateChanged.connect(self.updatewply)
         self.configSelec.clicked.connect(self.select_config)
+        self.mailListSelec.clicked.connect(self.select_mail)
+        self.SENDMAIL.clicked.connect(self.send_mail)
         
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)
@@ -349,6 +382,9 @@ class Ui_MainWindow(object):
         self.autocutselect.setText(_translate("MainWindow", "Selectionner"))
         self.selectiontype2.setItemText(0, _translate("MainWindow", "manuel"))
         self.selectiontype2.setItemText(1, _translate("MainWindow", "auto"))
+        self.debugtype.setItemText(0, _translate("MainWindow", "no debug"))
+        self.debugtype.setItemText(1, _translate("MainWindow", "debug"))
+        self.debugtype.setItemText(2, _translate("MainWindow", "hard debug"))
         self.startautocut.setText(_translate("MainWindow", "Lancer"))
         self.opencutdir.setText(_translate("MainWindow", "Open File"))
         self.thenalign.setText(_translate("MainWindow", "aligner"))
@@ -383,24 +419,30 @@ class Ui_MainWindow(object):
         self.dzipfile, _ = QFileDialog.getOpenFileName(
             None, "Select the archive", "~/", "Zip Archive (*.zip)"
         )
-        if self.dzipfile is not None and (self.dzipfile and len(self.surfdirs) > 0):
+        if self.dzipfile is not None and self.dzipfile:
+            self.infodir, _ = QFileDialog.getOpenFileName(
+                None, "Select the directory containing the students informations", path.dirname(self.dzipfile), "Ods file (*.ods) ;; Csv file (*.csv)"
+            )
+        if self.dzipfile is not None and (self.dzipfile and len(self.surfdirs) > 0) and self.infodir is not None and self.infodir:
             self.start2.setEnabled(True)
             print("Voici le fichier selectionné : " + str(self.dzipfile))
         else:
             self.start2.setEnabled(False)
+            self.display_error("Tout les fichiers n'ont pas été sélectionnés")
             print(self.dzipfile)
             print("Pas de fichier sélectionné")
+            
         
     def start_res(self):
         if hasattr(self, 'second_calculation_thread') and self.second_calculation_thread.isRunning():
             # Optionally, handle the case where the thread is already running
             print("Déjà en cours")
             return
-        self.second_calculation_thread = SecondCalculationThread(self.dzipfile,self.refnum)
+        self.second_calculation_thread = SecondCalculationThread(self.dzipfile,self.refnum,infodir=self.infodir)
         self.second_calculation_thread.calculation_finished.connect(self.on_second_calculation_finished)
         self.second_calculation_thread.start()
     
-    def show_pyvista_window(self,mdir=None,mesh=None,definingUp = False):
+    def show_pyvista_window(self,mdir=None,mesh=None):
         self.verif = True
         self.closed = False
         self.plotter = CBPlotter(self)
@@ -418,8 +460,11 @@ class Ui_MainWindow(object):
         # Activer la sélection des points
         #self.plotter.add_orientation_widget(actor=self.mesh,interactive=True)
         if self.defining_up_vector:
-            self.plotter.add_key_event("a", self.toggle_widget_activation)
+            self.plotter.add_key_event("a", self.toggle_plane_activation)
             self.planewidget = self.plotter.add_plane_widget(callback= lambda x: (),interaction_event='always')
+        elif self.pick_ref_point:
+            self.plotter.add_key_event("a", self.toggle_sphere_activation)
+            self.spwidget = self.plotter.add_sphere_widget(callback= lambda x: (),interaction_event='always',radius=3,color='red',)
         else:
             #self.plotter.enable_point_picking(callback=self.picked_callback,show_point=True, color="red", point_size=10,pickable_window=True)
             self.plotter.add_key_event("b", lambda : ())
@@ -434,15 +479,18 @@ class Ui_MainWindow(object):
         if not self.defining_up_vector:
             # Si trois points sont sélectionnés, fermez la fenêtre
             if len(self.selected_points) == 3:
-                self.close_pyvista_window()
                 # Réinitialisez pour la définition du "haut"
-                self.defining_up_vector = True
                 self.points.append(tuple(self.selected_points))
                 self.selected_points = []
-                self.show_pyvista_window(mesh=self.mesh,definingUp=True)
+                self.close_pyvista_window()
+                self.defining_up_vector = True
+                self.show_pyvista_window(mesh=self.mesh)
                 
+    def toggle_sphere_activation(self):
+        self.widget_activated = True
+        self.defineRef(self.spwidget.GetCenter())
     
-    def toggle_widget_activation(self):
+    def toggle_plane_activation(self):
         self.widget_activated = True
         self.defineUp(self.planewidget.GetNormal(),self.planewidget.GetOrigin())
     
@@ -454,16 +502,33 @@ class Ui_MainWindow(object):
             print("La normale est : " + str(normal))
             self.defining_up_vector = False
             self.selected_points = []
-            self.mesh = None
             self.upnormals.append(normal)
             self.widget_activated = False
             self.closed = True
-            self.close_pyvista_window(finish=True)
+            self.close_pyvista_window()
+            self.pick_ref_point = True
+            self.show_pyvista_window(mesh=self.mesh)
 
+    def defineRef(self,point):
+        if not self.plotter: 
+            print("Plotter is closed, ignoring callback")
+            return
+        if self.widget_activated:
+            print("Le point de référence est : " + str(point))
+            self.pick_ref_point = False
+            self.selected_points = []
+            self.mesh = None
+            self.refpoints.append(point)
+            self.widget_activated = False
+            self.closed = True
+            self.close_pyvista_window(finish=True)
+            
 
     def close_pyvista_window(self,finish=False):
+        
         if finish:
             self.verif = True
+            self.mesh = None
         else:
             self.verif = False
         if self.plotter is not None:
@@ -478,6 +543,9 @@ class Ui_MainWindow(object):
     def select_points_sup(self,dirs):
         points = []
         self.problemdirs = []
+        self.points = []
+        self.upnormals = []
+        self.refpoints = []
         self.verif = True
         self.widget_activated = False
         self.defining_up_vector = False
@@ -487,11 +555,11 @@ class Ui_MainWindow(object):
             self.show_pyvista_window(d)
             while (not self.closed):  # La boucle d'attente
                 QApplication.processEvents()
-            if len(self.points) == 0:
+            if (len(self.points) == 0):
                 print("Pas de points sélectionnés")
                 self.problemdirs.append((d,"Pas de points sélectionnés"))
-            if len(self.points[-1]) < 3:
-                print("Problème de sélection des points")
+            elif len(self.points[-1]) < 3:
+                print("Problème de sélection des points, le dernier elt de points est :" + str(self.points[-1]))
                 self.points.pop()
                 self.problemdirs.append((d,"Problème de sélection des points"))
             elif len(self.points) != len(self.upnormals):
@@ -503,23 +571,50 @@ class Ui_MainWindow(object):
                 self.points.pop()
                 self.upnormals.pop()
                 self.problemdirs.append((d,"Point de référence pas selectionné"))
+            else:
+                self.accepteddirs.append(d)
+            
             self.closed = False
         points = list(zip(self.points,self.upnormals,self.refpoints))
+        #gérer le fait que puisque on propose de retry sur des dirs, dirs et points seront pas forcément dans le même ordre + gérer pour renvoyer les points où il faut
         if len(self.problemdirs) > 0:
-            self.showErrorDialog(self.problemdirs,self.select_points_sup)
+            pcorrec = self.showErrorDialog(self.problemdirs,self.select_points_sup)
+            print("caca")
+            points.extend(pcorrec)
+        self.temppoints = points
         return points
-            
     
-    def start_cut(self):
-        #self.show_pyvista_window(self.supdirs[0])
-        points = self.select_points_sup(self.supdirs)
-        """if hasattr(self, 'autocut_thread') and self.autocut_thread.isRunning():
+    def send_mail(self):
+        if hasattr(self, 'mail_thread') and self.mail_thread.isRunning():
             # Optionally, handle the case where the thread is already running
             print("Déjà en cours")
             return
-        self.autocut_thread = AutoCutThread(self.supdirs,points)
+        if self.configdir is None:
+            self.select_config()
+        if self.maildir is None:
+            self.select_mail()
+        if not self.configdir or not self.maildir:
+            print("Pas de config ou de mail")
+            self.display_error("Pas de config ou de mail")
+            return
+        self.mail_thread = SendMailThread(self.configdir,self.maildir,self.dzipfile)
+        self.mail_thread.calculation_finished.connect(self.on_mail_finished)
+        self.mail_thread.start()
+    
+    def start_cut(self):
+        self.accepteddirs = []
+        #self.show_pyvista_window(self.supdirs[0])
+        points = self.select_points_sup(self.supdirs)
+        self.supdirs = self.accepteddirs
+        print("les points : " + str(points))
+        print("Les dirs dans leur nouvel ordre : " + str(self.supdirs))
+        if hasattr(self, 'autocut_thread') and self.autocut_thread.isRunning():
+            # Optionally, handle the case where the thread is already running
+            print("Déjà en cours")
+            return
+        self.autocut_thread = AutoCutThread(self.supdirs,points,debug=self.debugtype.currentIndex())
         self.autocut_thread.calculation_finished.connect(self.on_autocut_finished)
-        self.autocut_thread.start()"""
+        self.autocut_thread.start()
     
     def start_alig(self):
         if hasattr(self, 'calculation_thread') and self.calculation_thread.isRunning():
@@ -629,6 +724,7 @@ class Ui_MainWindow(object):
         try:
             supFile = self.user_select_cut()
             self.supdirs.append(supFile)
+            self.refnum.append(self.refsurfselect.value())
             self.teethcount.append(self.supteethN.value())
             self.update_sup_list(supFile)
         except FileNotFoundException as e:
@@ -647,6 +743,7 @@ class Ui_MainWindow(object):
                 self.update_sup_list(supFile)
         else:
             print("Aucun dossier sélectionné")
+        self.refnum += [self.refsurfselect.value()]*len(self.surfdirs)
 
     def auto_user_select_files(self):
         root_directory = QFileDialog.getExistingDirectory(
@@ -707,6 +804,15 @@ class Ui_MainWindow(object):
             self.display_error("No config file was selected. Please try again.")
         else:
             self.configdir = cffile
+            
+    def select_mail(self):
+        mailfile,_ = QFileDialog.getOpenFileName(
+            None, "Select the mail file", "~/", "Mail Files (*.csv)"
+        )
+        if not mailfile:
+            self.display_error("No mail file was selected. Please try again.")
+        else:
+            self.maildir = mailfile
     
     def open_file_explorer(self):
         print("open : " + self.zipdir)
@@ -766,6 +872,7 @@ class Ui_MainWindow(object):
         msgBox.exec()
         
     def showErrorDialog(self,dir_info,retry_function):
+        self.temppoints = []
         dialog = QDialog()
         dialog.setWindowTitle("Erreur")
         
@@ -792,7 +899,11 @@ class Ui_MainWindow(object):
         layout.addWidget(retry_button)
         
         dialog.setLayout(layout)
-        dialog.exec()    
+        dialog.exec()
+        
+        return self.temppoints
+        
+        
     
 
 class CBPlotter(BackgroundPlotter):
@@ -803,12 +914,16 @@ class CBPlotter(BackgroundPlotter):
     
     def closeEvent(self, event):
         print("La fenêtre est en train de se fermer")
+        self.mw.widget_activated = False
+        self.mw.defining_up_vector = False
+        self.mw.selected_points = []
+        self.mw.pick_ref_point = False
         if self.mw.verif:
             self.mw.closed = True
         else:
             self.mw.closed = False
-        # Insérez ici votre propre logique
-        super().closeEvent(event)  # Ne pas oublier d'appeler la méthode parente
+        
+        super().closeEvent(event)  # Le close parent
 
 
 

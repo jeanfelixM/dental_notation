@@ -54,6 +54,8 @@ def write_output(new_mesh, meshprep, cercles, ordre,base_prefix="dents", output_
             center = cercles[j]
             # N'écrire que les coordonnées du centre du cercle, pas le rayon
             f.write("%s %s %s\n" % (center[0], center[1], center[2]))
+            
+    return str(output_path(f"{prefix}_picked_points.txt")),str(output_path(f"{prefix}.ply")),str(output_path(f"{prefix}cut.ply"))
 
 
 
@@ -101,8 +103,8 @@ def augmenterzone(mesh,points,thresholddot = 0.35,thresholddist = 5,supnormal = 
                         zonefinale.add(tuple(vertices[index]))
                 cur += 1
             #afficher le resultat de la segmentation tout les n itérations
-            if n_iterations % n_visualization_step == 0:
-                visualize_zone(mesh, zonefinale, coord_to_index)
+            """if n_iterations % n_visualization_step == 0:
+                visualize_zone(mesh, zonefinale, coord_to_index)"""
     print("durée en itération " + str(n_iterations))
     if affiche:
         visualize_zone(mesh, zonefinale, coord_to_index)
@@ -272,12 +274,14 @@ def getPointsOrder(points, pointref, aordonne,tolerance = 12,debug= False):
     
     for key in d:
         d[key].sort(key=lambda x: x[1][0])  # trier selon les coordonnées transformées, pas les indices
-        print("La tranche key = " + str(key) + " est : " + str(d[key]))
+        if debug:
+            print("La tranche key = " + str(key) + " est : " + str(d[key]))
 
     ordered_points = []
     for key in sorted(d.keys()):
         ordered_points.extend(i for i, p in d[key])  # ajouter uniquement l'indice à la liste finale
-        print("Longueur de la tranche key = " + str(key) + " est : " + str(len(d[key])))
+        if debug:
+            print("Longueur de la tranche key = " + str(key) + " est : " + str(len(d[key])))
     
     if debug:
         return ordered_points, v1,v2,V
@@ -285,7 +289,7 @@ def getPointsOrder(points, pointref, aordonne,tolerance = 12,debug= False):
         return ordered_points
 
 
-def position_finding(meshprep,ninitpoint = 200,shift = 6.55,thickness = 6,complete = False,returnSphere = False,supnormal = np.array([0, 1, 0])):
+def position_finding(meshprep,ninitpoint = 200,shift = 6.55,thickness = 6,complete = False,returnSphere = False,supnormal = np.array([0, 1, 0]),debug=0):
     #nnpointplane,nnormal = translate_plane(pointonplane,sign*normal,6.2)
     
     #print("nnpointplane = " + str(nnpointplane))
@@ -314,7 +318,8 @@ def position_finding(meshprep,ninitpoint = 200,shift = 6.55,thickness = 6,comple
         # Récupère les sommets uniques pour ces triangles
         clust = meshprep.select_by_index(cutClusterVert)
         ninit = int(len(clust.vertices)/6)
-        print("ninit = " + str(ninit))
+        if debug >=1:
+            print("ninit = " + str(ninit))
         init = select_lowest_points(clust,ninit,supnormal)
         zoneplan = augmenterzone(clust,init,thresholddot=0.61,supnormal=supnormal,affiche=False)
         try:
@@ -348,42 +353,40 @@ def position_finding(meshprep,ninitpoint = 200,shift = 6.55,thickness = 6,comple
                 
         
         
-        new_mesh,_ = remove_selected_zone(clust, zoneplan)
-        """print("mesh sont on a enlevé la zone rouge")
-        o3d.visualization.draw_geometries([new_mesh])
-        
-        print("zone rouge")
-        o3d.visualization.draw_geometries([deleted])"""
-        
-        #new_mesh,normal,pointonplane = process_meshes(deleted, new_mesh)
-        
+        new_mesh,deleted = remove_selected_zone(clust, zoneplan)
+        if debug >=3:
+            print("mesh sont on a enlevé la zone rouge")
+            o3d.visualization.draw_geometries([new_mesh])
+            
+            print("zone rouge")
+            o3d.visualization.draw_geometries([deleted])
+  
         new_mesh = cut_mesh_with_plane(new_mesh, sign*normalclus, pointonplaneclus, up=False)
         nnmesh = combine_meshes(new_mesh,nnmesh)
         
-        """aaa = create_transparent_sphere(pointonplaneclus,1)
-        print("mesh sont on a enlevé la zone et cut")
-        t2,q2 = create_arrow(pointonplaneclus,sign*normalclus,length=10,color=[0,1,0])
-        o3d.visualization.draw_geometries([new_mesh,aaa,t2,q2])"""
-        #centers = np.array(centers)  # Convert the list of centers to a numpy array
-        # Create a PointCloud object for the centers
-        #center_cloud = o3d.geometry.PointCloud()
-        #center_cloud.points = o3d.utility.Vector3dVector(centers)
-    ab100,ah100 = create_arrow([0,0,0],[1,0,0],length=10,color = [1,0,0])
-    ab010,ah010 = create_arrow([0,0,0],[0,1,0],length=10,color = [0,1,0])
-    ab001,ah001 = create_arrow([0,0,0],[0,0,1],length=10,color = [0,0,1])
-    abn,ahn = create_arrow([0,0,1],nnormal,length=10,color = [1,0,1])
-    l = [meshprep] + sphere + [ab100,ah100,ab010,ah010,ab001,ah001,abn,ahn]
-    o3d.visualization.draw_geometries(l)
-    pl = pv.Plotter()
-     #Création du mesh pyvista
-    pb = np.array(meshprep.vertices)
-    fb = np.array(meshprep.triangles)
-    new_fb = np.column_stack((np.full((fb.shape[0], 1), 3), fb))
-    pyvista_mesh = pv.PolyData(pb, new_fb)
-    for c in cercles:
-        pl.add_mesh(pv.Sphere(radius=1,center=c),color='green')
-    pl.add_mesh(pyvista_mesh)
-    pl.show()
+        if debug >=3:
+            aaa = create_transparent_sphere(pointonplaneclus,1)
+            print("mesh sont on a enlevé la zone et cut")
+            t2,q2 = create_arrow(pointonplaneclus,sign*normalclus,length=10,color=[0,1,0])
+            o3d.visualization.draw_geometries([new_mesh,aaa,t2,q2])
+            
+    if debug >=2:
+        ab100,ah100 = create_arrow([0,0,0],[1,0,0],length=10,color = [1,0,0])
+        ab010,ah010 = create_arrow([0,0,0],[0,1,0],length=10,color = [0,1,0])
+        ab001,ah001 = create_arrow([0,0,0],[0,0,1],length=10,color = [0,0,1])
+        abn,ahn = create_arrow([0,0,1],nnormal,length=10,color = [1,0,1])
+        l = [meshprep] + sphere + [ab100,ah100,ab010,ah010,ab001,ah001,abn,ahn]
+        o3d.visualization.draw_geometries(l)
+        pl = pv.Plotter()
+        #Création du mesh pyvista
+        pb = np.array(meshprep.vertices)
+        fb = np.array(meshprep.triangles)
+        new_fb = np.column_stack((np.full((fb.shape[0], 1), 3), fb))
+        pyvista_mesh = pv.PolyData(pb, new_fb)
+        for c in cercles:
+            pl.add_mesh(pv.Sphere(radius=1,center=c),color='green')
+        pl.add_mesh(pyvista_mesh)
+        pl.show()
     if returnSphere:
         return cerclesteeth,sp,nnmesh,cercles
     else:
@@ -393,134 +396,122 @@ def normalize(values):
         max_value = max(values)
         min_value = min(values)
         return (values - min_value) / (max_value - min_value)
- 
-def main():
-    try:
-        meshdir,pointsdir= user_select_files()
-    except ValueError:
-        print("No file selected")
-        return
-    if not pointsdir:
+
+def autocut(mesh=None,points=None,pointref=None,up=[0,1,0],debug=0,base_prefix="dents",output_dir="."):
+    if (not points) or (not mesh):
         try:
-            mesh,points = user_pick_points(meshdir)
+            meshdir,pointsdir= user_select_files()
         except ValueError:
-            print("3 points must be selected")
-    else :
-        mesh,points = read_data(meshdir,pointsdir)
+            print("No file selected")
+            return
+        if not pointsdir:
+            try:
+                mesh,points = user_pick_points(meshdir)
+            except ValueError:
+                print("3 points must be selected")
+        else :
+            mesh,points = read_data(meshdir,pointsdir)
     
     mesh.remove_duplicated_vertices() #car le mesh est malformé
-    print("TAILLE DU MESH = " + str(len(mesh.triangles)))
+    if debug >= 1:
+        print("TAILLE DU MESH = " + str(len(mesh.triangles)))
     
     p = points[0].copy()
-    pp = (points[0] + points[1] + points[2])/3
-    print("p = " + str(p - 0.51))
     normal = normale(points[0],points[1],points[2])
-    sign = np.sign(np.dot(normal,[0,1,0])) #c'est un problème........
+    sign = np.sign(np.dot(normal,up))
     p = p + sign*normal*0.51
 
-    zonedel = augmenterzone(mesh,points,thresholddot = 0.80,thresholddist = 0.5,supnormal = sign*normal,vert=True)
-    
+    print("Détection du support ...")
+    zonedel = augmenterzone(mesh,points,thresholddot = 0.90,thresholddist = 0.4,supnormal = sign*normal,vert=True,affiche=(debug >= 1))
+    print("Suppression du support ...")
     meshprep,_ = remove_selected_zone(copy.deepcopy(mesh), zonedel)
-
     meshprep = cut_mesh_with_plane(meshprep,sign*normal,p,up=False)
-    meshprep.remove_duplicated_vertices() #car le mesh est malformé
     
-    print("TAILLE DU MESH COUPES = " + str(len(meshprep.triangles)))
-    print("ON VA PICK FROM PLANE")
-    pointref = pickFromPlane(meshprep, p, sign*normal)
+    if debug >= 1:
+        print("TAILLE DU MESH COUPES = " + str(len(meshprep.triangles)))
+    if not pointref:
+        pointref = pickFromPlane(meshprep, p, sign*normal)
+    
     triangseuil = len(meshprep.triangles)*0.006
-    meshprep = clean_mesh(meshprep, min_triangles=triangseuil) #remplacer 600 par % de triangles à garder en fonction de taille ou alors le truc avec la courbe à 2 pic (valable pour ceux dessous aussi)
-    print("LONGUEUR MESHPREP APRES CLEAN : "+ str(len(meshprep.triangles)))
-    o3d.visualization.draw_geometries([meshprep])
+    meshprep = clean_mesh(meshprep, min_triangles=triangseuil) 
     
+    if debug >= 1:
+        print("LONGUEUR MESHPREP APRES CLEAN : "+ str(len(meshprep.triangles)))
+    if debug >= 2:
+        print("meshprep après clean")
+        o3d.visualization.draw_geometries([meshprep])
+    
+    print("Détection des cônes et des dents ...")
     meshptitsupp = copy.deepcopy(meshprep)
-    meshptitsupp = clean_mesh(meshptitsupp, min_triangles=triangseuil) #remplacer 600 par % de triangles à garder en fonction de taille
-    cerclesteeth,sp,nmeshprep,cercles = position_finding(meshptitsupp,complete=True,thickness=10,shift=3.5,supnormal=sign*normal,returnSphere=True)
+    meshptitsupp = clean_mesh(meshptitsupp, min_triangles=triangseuil) 
+    cerclesteeth,sp,teethmesh,cercles = position_finding(meshptitsupp,complete=True,thickness=10,shift=3.5,supnormal=sign*normal,returnSphere=True,debug=debug)
     
-    nmeshprep.compute_vertex_normals()
+    teethmesh.compute_vertex_normals()
     
-    print("TAILLE DU N MESH = " + str(len(nmeshprep.triangles)))
+    if debug >= 1:
+        print("TAILLE DU N MESH = " + str(len(teethmesh.triangles)))
+    if debug >= 2:
+        print("affichage du teethmesh")
+        o3d.visualization.draw_geometries([teethmesh])
     
-    print("affichage du nouveau meshprep experimental")
-    o3d.visualization.draw_geometries([nmeshprep])
+    nmeshts = len(teethmesh.triangles)*0.015
+    clean_mesh(teethmesh, min_triangles=nmeshts,autofind=False) 
+    if debug >= 1:
+        print("le seuil est alors de : " + str(nmeshts))
+    if debug >= 2:
+        print("affichage du teethmesh apres clean")
+        o3d.visualization.draw_geometries([teethmesh])
     
-    nmeshts = len(nmeshprep.triangles)*0.015
-    print("le seuil sera alors de : " + str(nmeshts))
-    clean_mesh(nmeshprep, min_triangles=nmeshts,autofind=False) #remplacer 4000 par % de triangles à garder en fonction de taille
-    print("affichage du nouveau meshprep experimental apres clean")
-    o3d.visualization.draw_geometries([nmeshprep])
+    meshpss = len(teethmesh.triangles)*0.055
+    clean_mesh(meshprep, min_triangles=meshpss) 
+    if debug >= 1:
+        print("le seuil est alors de : " + str(meshpss))
+    if debug >= 2:
+        print("affichage de meshprep pour enlever support sans dent")
+        o3d.visualization.draw_geometries([meshprep])
     
-    meshpss = len(nmeshprep.triangles)*0.055
-    print("le seuil sera alors de : " + str(meshpss))
-    clean_mesh(meshprep, min_triangles=meshpss) #remplacer 4000 par % de triangles à garder en fonction de taille
-    o3d.visualization.draw_geometries([meshprep])
-    
-    
-    
-    #creer maillage simplifié
-    """nb_triangles_cible = int(len(mesh.triangles) * 0.1) #10% de triangles mais à adapter on verra
-    decimated_mesh = mesh.simplify_quadric_decimation(nb_triangles_cible)
-    print("augmentation zone mesh simplifié")
-    zonestart = augmenterzone(decimated_mesh,points,supnormal=sign*normal,kvoisin = 64,thresholddot=0.90,thresholddist=3.5) #on réalise d'abord la croissance de région sur un mesh avec moins de points.
-    
-    zonestart = tuple(set(zonestart) | set(zonedel))
-    print("augmentation zone mesh total")
-    zonefinale = augmenterzone(mesh, zonestart,supnormal=sign*normal,kvoisin=32) #d'abord faire sur maillage simplifié puis donner zone en input pour maillage totale
-    new_mesh,deleted = remove_selected_zone(mesh, zonefinale)
-    o3d.visualization.draw_geometries([new_mesh])
-    new_mesh,normal,pointonplane = process_meshes(deleted, new_mesh)
-    o3d.visualization.draw_geometries([new_mesh])
-    print("point on plane = " + str(pointonplane))
-    print("Cleaning mesh...")
-    new_mesh = clean_mesh(new_mesh)"""
-    
-    #[triangle_clusters, _, _] = new_mesh.cluster_connected_triangles()
-    #num_clusters = np.max(triangle_clusters) + 1
-    
-    #print("Number of clusters: " + str(num_clusters))
-    
-    """o3d.visualization.draw_geometries([new_mesh])
-
-    
-    cercles,sp,_ = position_finding(meshprep,returnSphere=True,supnormal=sign*normal)"""
-    
+    print("Détermination de l'ordre des dents...")
     ordre,v1,v2,V = getPointsOrder(cercles,pointref,cerclesteeth,debug=True)
-    print(ordre)
+    ordre.reverse()
+    out = write_output(teethmesh,meshprep,cerclesteeth,ordre,base_prefix=base_prefix,output_dir=output_dir)
     
-    acc = 0
-    vectvis = []
-    for v in V:
-        vector,h = create_arrow(np.array(cercles[2]), v, 10,color=[1,0 + acc,0 + 3*acc])
-        vectvis.append(vector)
-        vectvis.append(h)
-        acc += 0.05
-    
-    vector1,h1 = create_arrow(np.array(pointref), v1, 10,color=[0,1,0])
-    vector2,h2 = create_arrow(np.array(pointref), v2, 10,color=[0,0,1])
-    vector3,h3 = create_arrow(np.array(cercles[2]), v1, 10,color=[0,1,0])
-    vector4,h4 = create_arrow(np.array(cercles[2]), v2, 10,color=[0,0,1])
-
     ordre = np.array(switch_index(ordre))
-    normalized_values = normalize(ordre)
-
-    #colormap pour convertir les valeurs en couleurs RGB
-    colors = cm.get_cmap('hot')(normalized_values)[:, :3]  # Prend les trois premiers canaux (RGB) et ignore le canal alpha.
-
-    for i, sphere in enumerate(sp):
-        sphere.paint_uniform_color(colors[i])
-
-    sp = [meshptitsupp] + sp + [vector1, vector2,h1,h2,vector3,vector4,h3,h4] + vectvis
-    o3d.visualization.draw_geometries(sp)
+    
+    if debug >= 1:
+        print(ordre)
+    
+    if debug >= 1:
+        print("Visualisation ordre et autre")
+        acc = 0
+        vectvis = []
+        for v in V:
+            vector,h = create_arrow(np.array(cercles[2]), v, 10,color=[1,0 + acc,0 + 3*acc])
+            vectvis.append(vector)
+            vectvis.append(h)
+            acc += 0.05
         
-    #points = np.asarray(deleted.vertices)
-    # Faire le clustering avec DBSCAN
-    #labels = dbscan_clustering(points, eps=0.4, min_samples=10)
-    # Visualisation des clusters
-    #visualize_clusters(deleted, labels)
+        vector1,h1 = create_arrow(np.array(pointref), v1, 10,color=[0,1,0])
+        vector2,h2 = create_arrow(np.array(pointref), v2, 10,color=[0,0,1])
+        vector3,h3 = create_arrow(np.array(cercles[2]), v1, 10,color=[0,1,0])
+        vector4,h4 = create_arrow(np.array(cercles[2]), v2, 10,color=[0,0,1])
+        normalized_values = normalize(ordre)
+        #colormap pour convertir les valeurs en couleurs RGB
+        colors = cm.get_cmap('hot')(normalized_values)[:, :3]  # Prend les trois premiers canaux (RGB) et ignore le canal alpha.
+
+        for i, sphere in enumerate(sp):
+            sphere.paint_uniform_color(colors[i])
+
+        sp = [meshptitsupp] + sp + [vector1, vector2,h1,h2,vector3,vector4,h3,h4] + vectvis
+        o3d.visualization.draw_geometries(sp)
     
-    write_output(nmeshprep,meshprep,cerclesteeth,ordre)
     
+    return out
+        
+
+def main():
+    autocut(debug=2)
     
+
 
 if __name__ == "__main__":
     main()
