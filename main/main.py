@@ -14,6 +14,7 @@ from conversion_ply_vers_vtk.massConvertion import goconvert
 from deformation.mass_add_colormap import go_color
 from deformation.pairwise_file_edition_freezeCP_reference import atlas_file_edition
 from deformation.postprocessing import postprocess
+from report.fillpagegenerator import add_page_to_pdf
 from report.reportgenerator import create_report
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -204,6 +205,7 @@ def findScreenshots(directory, num):
 
 def get_pdf_path(pdf_directory, numero):
     # Convertir le chemin du dossier en objet Path
+    print("On est dans get pdf path et on cherche dans " + str(pdf_directory))
     root_path = Path(pdf_directory)
     
     # Vérifier si le chemin donné existe et est un dossier
@@ -229,16 +231,115 @@ def get_pdf_path(pdf_directory, numero):
     print("Aucun fichier PDF contenant ce numéro n'a été trouvé.")
     return ""
 
+def get_all_pdf_paths(pdf_directory):
+
+    pdf_paths = []
+    root_path = Path(pdf_directory)
+    if not root_path.exists() or not root_path.is_dir():
+        print("Le chemin spécifié n'est pas un dossier valide.")
+        return []
+    
+    for subdir in root_path.iterdir():
+        if subdir.is_dir():
+            pdf_folder = subdir / "pdf"
+            if pdf_folder.exists() and pdf_folder.is_dir():
+                for pdf_file in pdf_folder.glob("*.pdf"):
+                    pdf_paths.append(str(pdf_file))
+
+    if not pdf_paths:
+        print("Aucun fichier PDF n'a été trouvé.")
+        
+    return pdf_paths
+
+def extract_csv_data(file_path, passage='first'):
+    """
+    Extracts relevant information from a CSV file based on the passage ('first' or 'second').
+    
+    Parameters:
+    - file_path: str, path to the CSV file
+    - passage: str, either 'first' or 'second' to indicate which set of columns to extract
+    
+    Returns:
+    - A dictionary containing the relevant data
+    """
+    # Load the CSV file
+    df = pd.read_csv(file_path)
+    
+    # Initialize an empty dictionary to hold the results
+    result = {}
+    
+    if passage == 'first':
+        # Extract only the 'numero_etudiant', 'nom', and 'prénom' columns
+        result_df = df[['numero_etudiant', 'nom', 'prénom']].copy()
+        
+        # Convert 'numero_etudiant' to int, drop any rows with NaN values in 'numero_etudiant' before conversion
+        result_df.dropna(subset=['numero_etudiant'], inplace=True)
+        result_df['numero_etudiant'] = result_df['numero_etudiant'].astype(int)
+        
+        # Sort by 'numero_etudiant'
+        result_df.sort_values(by='numero_etudiant', inplace=True)
+        
+        result['students'] = result_df.to_dict(orient='records')
+        
+        # Extract the name of the column containing the final grades (the "type of tooth")
+        # Assuming it is always in the same position
+        result['type_dent'] = df.columns[3]
+        
+    elif passage == 'second':
+        # Rename the column containing the final grades to 'note'
+        df.rename(columns={df.columns[3]: 'note'}, inplace=True)
+        
+        # Include 'numero_etudiant' for record matching and drop other unnecessary columns
+        df_result = df[['numero_etudiant', 'note'] + list(df.columns[4:])].copy()
+        
+        # Convert 'numero_etudiant' to int, drop any rows with NaN values in 'numero_etudiant' before conversion
+        df_result.dropna(subset=['numero_etudiant'], inplace=True)
+        df_result['numero_etudiant'] = df_result['numero_etudiant'].astype(int)
+        
+        # Sort by 'numero_etudiant'
+        df_result.sort_values(by='numero_etudiant', inplace=True)
+        
+        result = df_result.to_dict(orient='records')
+        
+    else:
+        return "Invalid passage parameter. Must be either 'first' or 'second'."
+    
+    return result
+
+
 def create_pdf(dir,curnum=0,infodir="./infos.ods",n=0):
-    infos = file_to_dict(infodir)
+    ninfos = extract_csv_data(infodir, passage='first')
+    infos = ninfos['students']
     Path(path.join(dir,"pdf")).mkdir(exist_ok=True)
     for i in range(1,n):
         print("on cheche dans" + str(Path(path.join(dir,"screenshots"))))
         images = findScreenshots(Path(path.join(dir,"screenshots")),i+1)
-        print("On a curnum qui est " + str(curnum)+ "et donc on cherchera a l'indice " + str(i+curnum))
+        #print("On a curnum qui est " + str(curnum)+ "et donc on cherchera a l'indice " + str(i+curnum))
         i = i + curnum
-        create_report(name = infos[i]['nom'] + " " + infos[i]['prenom'],images = images,csv_path = Path(path.join(dir,"input","resultat_distances_volumes.csv")),i=i-curnum,dir = Path(path.join(dir,"pdf/")),ndent=i,classe=infos[i]['classe'],date=infos[i]['date'],dent=infos[i]['type dent'])
+        create_report(name = infos[i]['nom'] + " " + infos[i]['prénom'],images = images,csv_path = Path(path.join(dir,"input","resultat_distances_volumes.csv")),i=i-curnum,dir = Path(path.join(dir,"pdf/")),ndent=i,dent=ninfos['type_dent'])
     pass
+
+def get_max_student_number(csv_path):
+    """
+    Get the maximum student number ('numero_etudiant') in a CSV file.
+    
+    Parameters:
+    - csv_path: str, path to the CSV file
+    
+    Returns:
+    - int, maximum student number in the CSV file, returns None if the column is not found or the data is invalid
+    """
+    try:
+        # Load the CSV file into a DataFrame
+        df = pd.read_csv(csv_path)
+        
+        # Find and return the maximum 'numero_etudiant'
+        max_num = df['numero_etudiant'].max()
+        return int(max_num) if not pd.isna(max_num) else None
+    except KeyError:
+        # Return None if 'numero_etudiant' column is not found
+        return None
+
 
 def read_config(file_path):
     config = configparser.ConfigParser()
@@ -373,9 +474,14 @@ def batchend(zipdir,refnum,infodir):
         postprocess(input_directory=Path(path.join(subfolder,"input")), reference_surface=findref(subfolder,ref), translationdir = path.join(subfolder,"translations.csv"))
 
         #create pdf
-        create_pdf(subfolder,curnum=currCount,infodir=infodir,n= count_vtk_files(Path(path.join(subfolder,"surfaces"))) )
+        try:
+            create_pdf(subfolder,curnum=currCount,infodir=infodir,n= count_vtk_files(Path(path.join(subfolder,"surfaces"))) )
+        except:
+            print("Erreur lors de la création du PDF")
         
         currCount += count_vtk_files(Path(path.join(subfolder,"surfaces"))) - 1
+        
+    print("Terminé !")
         
         
 def fullautocut(dirs,points,debug):
@@ -405,9 +511,18 @@ def sendmail(configdir,maildir,prepdfdir):
     username, password, smtp_server, smtp_port = read_config(configdir)
     
     send_emails(maildir, username, password, smtp_server, smtp_port, pdf_directory=allcaclpath)
-    
 
-
+def actupdf(prepdfdir,infodir):  
+    allcaclpath = Path(path.join(path.dirname(prepdfdir),"allcalcul"))
+    infos = extract_csv_data(infodir, passage='second')
+    n = get_max_student_number(infodir)
+    for i in range(0,n):
+        pdfpath = get_pdf_path(allcaclpath,i+1)
+        if pdfpath == '':
+            break
+        add_page_to_pdf(pdfpath,infos[i])
+    print("Actualisation terminée")
+        
 if __name__ == "__main__":
     #main()
     pass

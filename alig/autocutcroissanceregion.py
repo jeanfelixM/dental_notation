@@ -31,7 +31,7 @@ def get_new_prefix(base_prefix="output", output_dir="."):
     # Le nouveau numéro est max_num + 1
     new_num = max_num + 1
 
-    return base_prefix + "_" + str(new_num)
+    return base_prefix #+ "_" + str(new_num)
 
 
 def write_output(new_mesh, meshprep, cercles, ordre,base_prefix="dents", output_dir="."):

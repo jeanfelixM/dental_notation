@@ -28,10 +28,25 @@ from main import batchstart
 from main import batchend
 from main import fullautocut
 from main import sendmail
+from main import actupdf
 
 
 class FileNotFoundException(Exception):
     pass
+
+class PdfThread(QThread):
+    calculation_finished = pyqtSignal(str)  # Signal to be emitted when calculation is finished
+
+    def __init__(self,prePdfdir ,infodir,parent=None):
+        super().__init__(parent)
+        self.prePdfdir = prePdfdir
+        self.infodir = infodir
+
+    def run(self):
+        # intensive calculation here
+        p = actupdf(self.prePdfdir,self.infodir)
+        # After the calculation, emit the finished signal
+        self.calculation_finished.emit(p)
 
 class SendMailThread(QThread):
     calculation_finished = pyqtSignal(str)  # Signal to be emitted when calculation is finished
@@ -104,7 +119,6 @@ class Ui_MainWindow(object):
         self.refnum = []
         self.supdirs = []
         self.problemdirs = []
-        self.teethcount = [] #à supprimer (voir note)
         
         
         #Valeurs pour lancer l'autocut
@@ -208,20 +222,9 @@ class Ui_MainWindow(object):
         self.tabWidget.setGeometry(QtCore.QRect(10, 0, 371, 261))
         self.tabWidget.setObjectName("tabWidget")
         self.tabWidget.addTab(self.cuttab, "")
-        self.supteethN = QtWidgets.QSpinBox(self.centralwidget)
-        self.supteethN.setGeometry(QtCore.QRect(570, 230, 101, 24))
-        self.supteethN.setProperty("value", 10)
-        self.supteethN.setObjectName("supteethN")
-        self.label_11 = QtWidgets.QLabel(self.centralwidget)
-        self.label_11.setGeometry(QtCore.QRect(440, 220, 111, 51))
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred)
         sizePolicy.setHorizontalStretch(0)
         sizePolicy.setVerticalStretch(0)
-        sizePolicy.setHeightForWidth(self.label_11.sizePolicy().hasHeightForWidth())
-        self.label_11.setSizePolicy(sizePolicy)
-        self.label_11.setTextFormat(QtCore.Qt.AutoText)
-        self.label_11.setScaledContents(False)
-        self.label_11.setObjectName("label_11")
         self.alignementselec = QtWidgets.QPushButton(self.aligtab)
         self.alignementselec.setGeometry(QtCore.QRect(10, 20, 141, 51))
         self.alignementselec.setObjectName("alignementselec")
@@ -293,16 +296,19 @@ class Ui_MainWindow(object):
         self.label_8.setGeometry(QtCore.QRect(270, 10, 81, 16))
         self.label_8.setObjectName("label_8")
         self.label_12 = QtWidgets.QLabel(self.centralwidget)
-        self.label_12.setGeometry(QtCore.QRect(250, 320, 131, 16))
+        self.label_12.setGeometry(QtCore.QRect(320, 320, 131, 16))
         self.label_12.setObjectName("label_12")
         self.SENDMAIL = QtWidgets.QPushButton(self.centralwidget)
-        self.SENDMAIL.setGeometry(QtCore.QRect(230, 410, 171, 31))
+        self.SENDMAIL.setGeometry(QtCore.QRect(310, 410, 171, 31))
         self.SENDMAIL.setObjectName("SENDMAIL")
         self.configSelec = QtWidgets.QPushButton(self.centralwidget)
-        self.configSelec.setGeometry(QtCore.QRect(230, 340, 81, 61))
+        self.configSelec.setGeometry(QtCore.QRect(310, 340, 81, 61))
         self.configSelec.setObjectName("configSelec")
+        self.pdfactu = QtWidgets.QPushButton(self.centralwidget)
+        self.pdfactu.setGeometry(QtCore.QRect(180, 340, 111, 81))
+        self.pdfactu.setObjectName("pdfactu")
         self.mailListSelec = QtWidgets.QPushButton(self.centralwidget)
-        self.mailListSelec.setGeometry(QtCore.QRect(320, 340, 81, 61))
+        self.mailListSelec.setGeometry(QtCore.QRect(400, 340, 81, 61))
         self.mailListSelec.setObjectName("mailListSelec")
         self.zipacces = QtWidgets.QLabel(self.centralwidget)
         self.zipacces.setGeometry(QtCore.QRect(0, 480, 731, 31))
@@ -348,6 +354,7 @@ class Ui_MainWindow(object):
         self.startautocut.clicked.connect(self.start_cut)
         self.clearbox.stateChanged.connect(self.updatewply)
         self.configSelec.clicked.connect(self.select_config)
+        self.pdfactu.clicked.connect(self.actualize_pdf)
         self.mailListSelec.clicked.connect(self.select_mail)
         self.SENDMAIL.clicked.connect(self.send_mail)
         
@@ -389,11 +396,11 @@ class Ui_MainWindow(object):
         self.opencutdir.setText(_translate("MainWindow", "Open File"))
         self.thenalign.setText(_translate("MainWindow", "aligner"))
         self.configSelec.setText(_translate("MainWindow", "Config"))
+        self.pdfactu.setText(_translate("MainWindow", "Actualiser PDF"))
         self.mailListSelec.setText(_translate("MainWindow", "Mails liste"))
         self.label_12.setText(_translate("MainWindow", "Envoie des mails"))
         self.SENDMAIL.setText(_translate("MainWindow", "ENVOYER"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.cuttab), _translate("MainWindow", "Autocut"))
-        self.label_11.setText(_translate("MainWindow", "<html><head/><body><p>Nombre de dent <br/>par support</p></body></html>"))
         self.tabWidget.setTabText(self.tabWidget.indexOf(self.cuttab), _translate("MainWindow", "Autocut"))
       
     def updatewply(self):
@@ -449,12 +456,12 @@ class Ui_MainWindow(object):
         if mdir:
             try:
                 self.mesh = pv.read(mdir)
-                self.plotter.add_mesh(self.mesh, show_edges=True, color="lightblue")
+                self.plotter.add_mesh(self.mesh, show_edges=False, color="lightblue")
             except:
                 print("Error reading the mesh file")
         else:
             try:
-                self.actor = self.plotter.add_mesh(mesh, show_edges=True, color="lightblue")
+                self.actor = self.plotter.add_mesh(mesh, show_edges=False, color="lightblue")
             except:
                 print("Error loading the mesh")
         # Activer la sélection des points
@@ -616,6 +623,21 @@ class Ui_MainWindow(object):
         self.autocut_thread.calculation_finished.connect(self.on_autocut_finished)
         self.autocut_thread.start()
     
+    def actualize_pdf(self):
+        if hasattr(self, 'pdf_thread') and self.pdf_thread.isRunning():
+            # Optionally, handle the case where the thread is already running
+            print("Déjà en cours")
+            return
+        if self.infodir is None or not self.infodir or self.infodir == "":
+            self.display_error("Pas de fichier d'informations, il faut d'abord run postprocess (ou charger une sauvegarde)")
+            return
+        if self.dzipfile is None or not self.dzipfile or self.dzipfile == "":
+            self.display_error("Pas de fichier zip, il faut d'abord run postprocess (ou charger une sauvegarde)")
+            return
+        self.pdf_thread = PdfThread(infodir= self.infodir,prePdfdir = self.dzipfile)
+        self.pdf_thread.calculation_finished.connect(self.on_pdf_finished)
+        self.pdf_thread.start()
+    
     def start_alig(self):
         if hasattr(self, 'calculation_thread') and self.calculation_thread.isRunning():
             # Optionally, handle the case where the thread is already running
@@ -624,6 +646,10 @@ class Ui_MainWindow(object):
         self.calculation_thread = FirstCalculationThread(self.surfdirs,self.noise.value(),self.objectkernel.value(),self.deformkernel.value(),self.refnum)
         self.calculation_thread.calculation_finished.connect(self.on_calculation_finished)
         self.calculation_thread.start()
+
+    def on_pdf_finished(self,path):
+        #self.display_info("PDF actualisé")
+        pass
 
     def on_autocut_finished(self,paths):
         for pointspic,surface,surfacecut in paths:
@@ -725,7 +751,6 @@ class Ui_MainWindow(object):
             supFile = self.user_select_cut()
             self.supdirs.append(supFile)
             self.refnum.append(self.refsurfselect.value())
-            self.teethcount.append(self.supteethN.value())
             self.update_sup_list(supFile)
         except FileNotFoundException as e:
             print(e)
@@ -738,7 +763,6 @@ class Ui_MainWindow(object):
         if root_directory:
             all_files = [f for f in os.listdir(root_directory) if f.endswith(".stl")]
             self.supdirs = [os.path.join(root_directory, f) for f in all_files]
-            self.teethcount += [self.supteethN.value()]*len(self.supdirs)
             for supFile in self.supdirs:
                 self.update_sup_list(supFile)
         else:
@@ -834,7 +858,7 @@ class Ui_MainWindow(object):
          
         if filename:
             with open(filename, 'wb') as f:
-                pickle.dump({'refnum': self.refnum, 'dirs': self.surfdirs, 'config' : self.configdir,'supdirs' : self.supdirs, 'teethcount' : self.teethcount, 'maildir' : self.maildir }, f) 
+                pickle.dump({'refnum': self.refnum, 'dirs': self.surfdirs, 'config' : self.configdir,'supdirs' : self.supdirs, 'teethcount' : self.teethcount, 'maildir' : self.maildir,'dzipfile' : self.dzipfile, 'infodir' : self.infodir }, f) 
     
     def charge(self):
         fname = QFileDialog.getOpenFileName(None, 'Ouvrir fichier', '/', "Pickle files (*.pkl)")
@@ -848,6 +872,10 @@ class Ui_MainWindow(object):
             self.supdirs = data['supdirs']
             self.teethcount = data['teethcount']
             self.maildir = data['maildir']
+            if 'infodir' in data:
+                self.infodir = data['infodir']
+            if 'dzipfile' in data:
+                self.dzipfile = data['dzipfile']
             self.update_ui()
             
     def update_ui(self):
@@ -858,8 +886,6 @@ class Ui_MainWindow(object):
             self.update_surf_list(self.surfdirs[i][0],self.surfdirs[i][1],self.surfdirs[i][2])
         if self.refnum is not None and (self.refnum and len(self.refnum) > 0):
             self.refsurfselect.setValue(self.refnum[0])
-        if self.teethcount is not None and (self.teethcount and len(self.teethcount) > 0):
-            self.supteethN.setValue(self.teethcount[0])
         self.on_file_selected()
         #self.openzipdir.setEnabled(True)
 

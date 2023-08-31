@@ -1,4 +1,3 @@
-import datetime
 from os import path
 from tkinter import Tk, filedialog
 import pandas as pd
@@ -13,10 +12,10 @@ from PyPDF2 import PdfMerger
 from pathlib import Path
 
 
-from report.fillpagegenerator import create_form
 
 
-def create_report(name, images,csv_path,i,grade = 100, comments = "Parfait",dir = ".",classe="1",dent = "molaire",ndent=4,date = datetime.date(2020, 12, 18)):
+
+def create_report(name, images,csv_path,i,grade = 100, comments = "Parfait",dir = ".",dent = "molaire",ndent=4):
     doc = SimpleDocTemplate(str(dir) +"/" + name + "_" + str(ndent) +".pdf", pagesize=A4)
     styles = getSampleStyleSheet()
 
@@ -25,11 +24,9 @@ def create_report(name, images,csv_path,i,grade = 100, comments = "Parfait",dir 
     # Créer l'image et les Paragraphs
     img = Image(header_image, height=doc.height/12, width=doc.width/3)
     student_name = Paragraph(f"Nom: {name}", styles["Heading3"])
-    hspace = Spacer(0, 0)
-    student_class = Paragraph(f"Classe : {classe}", styles["Heading3"])
 
     # Créer un tableau pour positionner l'image à gauche et le texte à droite
-    data = [[img, "", student_name, student_class]]
+    data = [[img, "", student_name]]
     tbl = Table(data, colWidths=[doc.width/4, doc.width/4, doc.width/4, doc.width/4])
 
     # Ajouter le tableau à l'histoire
@@ -98,13 +95,12 @@ def create_report(name, images,csv_path,i,grade = 100, comments = "Parfait",dir 
 
     doc.build(story)
     
-    create_form(str(dir) +"/")
-    
-    fusion(dir, name + "_" + str(ndent) +".pdf")
+    #create_form(str(dir) +"/") 
+    #fusion(dir, name + "_" + str(ndent) +".pdf")
 
 def fusion(chemin, nom):
     chemin = Path(chemin)  # Convertit la chaîne en objet Path
-    fichier_nom = Path(path.join(chemin, nom))  # Utilise l'opérateur / pour joindre les chemins
+    fichier_nom = Path(path.join(chemin, nom))  
     form_pdf = Path(path.join(chemin, "form.pdf"))  # Chemin vers le fichier form.pdf
     
     print(fichier_nom)  # Affiche le chemin complet du fichier

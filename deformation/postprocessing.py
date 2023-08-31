@@ -80,7 +80,7 @@ def regularity_calc2(control_points,momenta,kwidth):
     base = np.linalg.norm(m, axis=1)
     regularity = np.trace(R)
     regularitybase = np.sum(base)
-    return (regularitybase - regularity)/regularitybase#/np.trace(np.sqrt(np.matmul(m, np.transpose(m))))
+    return 100*((regularitybase - regularity)/regularitybase),regularitybase#/np.trace(np.sqrt(np.matmul(m, np.transpose(m))))
 #En résumé, mT.K.m (et en particulier la somme de sa diagonale) est une mesure de la façon dont les momenta originaux sont "en phase" avec le champ vectoriel interpolé. Une valeur plus élevée indique une plus grande "régularité" de la transformation, c'est-à-dire que les momenta originaux et le champ vectoriel interpolé sont plus alignés. C'est une mesure de la qualité de la transformation.
 
 
@@ -144,6 +144,7 @@ def take_screenshot(pointsBase,facesBase,scalarsBase, base, output_directory):
     mesh.vertices = o3d.utility.Vector3dVector(pb)
     mesh.triangles = o3d.utility.Vector3iVector(fb)
 
+    zf = 1.5
 
     print("Avant pyvista mesh creation")
     # Convert it to a PyVista mesh
@@ -157,15 +158,19 @@ def take_screenshot(pointsBase,facesBase,scalarsBase, base, output_directory):
     plotter = pv.Plotter(off_screen=True)
 
     # Add the mesh
-    plotter.add_mesh(pyvista_mesh,scalars='scalars',cmap="fire",
+    plotter.add_mesh(pyvista_mesh,scalars='scalars',cmap="coolwarm",
     lighting=True)
 
-    plotter.camera.zoom(3.5)
+    plotter.background_color = 'white'
+
+    plotter.camera.zoom(zf)
     plotter.render()
 
     print("Avant camera position")
     # Set camera to the -Z position
     plotter.camera_position = 'xy'
+    plotter.camera.zoom(zf)
+    plotter.render()
     img = plotter.screenshot()
 
     print("Avant imageio")
@@ -174,6 +179,8 @@ def take_screenshot(pointsBase,facesBase,scalarsBase, base, output_directory):
 
     # Set camera to the +Y position
     plotter.camera_position = 'xz'
+    plotter.camera.zoom(zf)
+    plotter.render()
     img = plotter.screenshot()
 
     # Save the screenshot to a file
@@ -183,6 +190,7 @@ def take_screenshot(pointsBase,facesBase,scalarsBase, base, output_directory):
     # Set camera to the -Y position
     plotter.camera_position = 'xz'
     plotter.camera.azimuth = 180
+    plotter.camera.zoom(zf)
     plotter.render()
     img = plotter.screenshot()
 
@@ -193,6 +201,7 @@ def take_screenshot(pointsBase,facesBase,scalarsBase, base, output_directory):
     # Set camera to the oblique position
     plotter.camera_position = 'xz'
     plotter.camera.azimuth = 82
+    plotter.camera.zoom(zf)
     plotter.render()
     img = plotter.screenshot()
 
@@ -203,7 +212,7 @@ def take_screenshot(pointsBase,facesBase,scalarsBase, base, output_directory):
 def postprocess(input_directory,reference_surface,translationdir):
     
     translation = np.loadtxt(translationdir, delimiter=";")
-    dirnames = list(Path(input_directory).glob('*'))
+    dirnames = [p for p in Path(input_directory).iterdir() if p.is_dir()]
     pcd = o3d.geometry.TriangleMesh()
     pcdBase = o3d.geometry.TriangleMesh()
     pcdRefTMP = o3d.geometry.TriangleMesh()
@@ -212,6 +221,8 @@ def postprocess(input_directory,reference_surface,translationdir):
     cpt = 0
     regularity = np.zeros((len(dirnames))+1)
     regularity[0] = 0
+    regularityval = np.zeros((len(dirnames))+1)
+    regularityval[0] = 0
     VolumeTarget = np.zeros((len(dirnames))+1)
     VolumeTarget[0] = 0
     VolumeBase = np.zeros((len(dirnames))+1)
@@ -248,7 +259,7 @@ def postprocess(input_directory,reference_surface,translationdir):
             #et qui donne lieu à la déformation en question
             
             
-            regularity[cpt] = regularity_calc2(control_points,momenta,xml_parameters.deformation_kernel_width) 
+            regularity[cpt],regularityval[cpt] = regularity_calc2(control_points,momenta,xml_parameters.deformation_kernel_width) 
 
             
             
@@ -305,15 +316,20 @@ def postprocess(input_directory,reference_surface,translationdir):
     surface.connectivity = facesTarget
     surface.write(input_directory, "resultatReference.vtk")
 
-    with open(path.join(input_directory, 'resultat_distances_volumes.csv'), 'w', encoding='utf-8') as mytxtfile:
-        mytxtfile.write(
-        "Folder name; Base name; Target name; Base Volume; Target Volume; Extracted Volume; Registered Volume; Deformation; Maximum; Minimum\n")
-        cpt = 0
-        for cpt in range(len(dirnames)+1):
-                names = (path.basename(dirname)).split('_to_')
-                mytxtfile.write("%s;%s;%s;%f;%f;%f;%f;%f;%f;%f\n" % (
-                    path.basename(dirname), names[0], names[1], VolumeBase[cpt], VolumeTarget[cpt],
-                    VolumeBase[cpt] - VolumeTarget[cpt], VolumeRegistered[cpt], regularity[cpt],maxi[cpt],mini[cpt]))
+
+    try:
+        with open(path.join(input_directory, 'resultat_distances_volumes.csv'), 'w', encoding='utf-8') as mytxtfile:
+            mytxtfile.write(
+            "Folder name; Base name; Target name; Base Volume; Target Volume; Extracted Volume; Registered Volume; Deformation (%); Deformation Val; Maximum; Minimum\n")
+            cpt = 0
+            for cpt in range(len(dirnames)+1):
+                    dirname = dirnames[cpt-1]
+                    names = (path.basename(dirname)).split('_to_')
+                    mytxtfile.write("%s;%s;%s;%f;%f;%f;%f;%f;%f;%f;%f\n" % (
+                        path.basename(dirname), names[0], names[1], VolumeBase[cpt], VolumeTarget[cpt],
+                        VolumeBase[cpt] - VolumeTarget[cpt], VolumeRegistered[cpt], regularity[cpt],regularityval[cpt],maxi[cpt],mini[cpt]))
+    except:
+        print("Erreur d'écriture du fichier resultat_distances_volumes.csv")
 
 if __name__ == '__main__':
     input_directory = '/home/jeanfe/Documents/calcul/input'

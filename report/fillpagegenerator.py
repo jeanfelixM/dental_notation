@@ -1,6 +1,12 @@
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfbase import pdfform
+from PyPDF2 import PdfReader, PdfWriter
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle,Paragraph
+from reportlab.lib.styles import getSampleStyleSheet
+import os
 import openpyxl
 
 def read_excel(filepath):
@@ -34,60 +40,142 @@ def wrap_text(text, max_length):
     lines.append(" ".join(current_line))
     return lines
 
-def create_form(where, excel_path='grille.xlsx'):
-    width, height = A4
+def wrap_text2(text, width, style):
+    """
+    Wrap text to make sure it fits within a certain width when rendered in a PDF.
+    The function returns a list of lines.
+    """
+    lines = []
+    words = text.split()
+    line = ""
+    for word in words:
+        test_line = f"{line} {word}".strip()
+        test_paragraph = Paragraph(test_line, style)
+        _, h = test_paragraph.wrap(width, 9999)
+        if h <= style.leading:
+            line = test_line
+        else:
+            lines.append(line)
+            line = word
+    lines.append(line)
+    return lines
 
-    headers, data, num_rows, max_cols = read_excel(excel_path)
 
-    # Définir les positions de base
-    commentaire_pos_x = 50
-    commentaire_pos_y = 800
-    note_pos_x = 50
-    note_pos_y = 680
-    tableau_pos_x = 50
-    tableau_pos_y = 570
-    tableau_offset_y = tableau_pos_y - 20  # cette variable définira où commence le dessin du tableau
 
-    c = canvas.Canvas(where + 'form.pdf', pagesize=A4)
+def generate_second_page(data, filename):
+    """
+    Generate a PDF report based on the given data.
+
+    Parameters:
+    - data: dict, a record containing details about a student
+    - filename: str, the name of the PDF file to generate
+    """
+    # Create a PDF document
+    pdf = SimpleDocTemplate(
+        filename,
+        pagesize=A4,
+    )
     
-    font_size=10
+    # Initialize table data with headers
+    table_data = [['Item', 'Value']]
     
-    c.setFont("Helvetica", font_size)  # "Helvetica" is a default font, you can change it if needed
-    line_height = font_size + 4  # You can adjust this value as per your requirements
+    styles = getSampleStyleSheet()
+    style = styles['Normal']
+    style.leading = 12
     
-    form = c.acroForm
+    # Add a row for the student number
+    table_data.append(['Numéro d\'étudiant', data.get('numero_etudiant', '')])
+    
+    # Add a row for the general grade
+    table_data.append(['Note Générale', data.get('note', '')])
+    
+    # Add a row for the comment
+    comment = data.get('commentaire', '')
+    wrapped_comment = wrap_text2(comment, 350, style)
+    table_data.append(['Commentaire', '\n'.join(wrapped_comment)])
+    
+    # Dynamically add rows for the other columns
+    for key, value in data.items():
+        if key not in ['numero_etudiant', 'note', 'commentaire']:
+            table_data.append([key, value])
+    
+    # Create a Table object
+    table = Table(table_data, colWidths=[150, 350])
+    
+    # Add grid and other style elements
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 14),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    
+    # Add table to elements to build and generate PDF
+    elements = []
+    elements.append(table)
+    pdf.build(elements)
 
-    c.drawString(commentaire_pos_x, commentaire_pos_y, 'Commentaire:')
-    form.textfield(name='commentaire', tooltip='Entrer votre commentaire ici',
-                   x=commentaire_pos_x, y=commentaire_pos_y - 105, width=400, height=100, fieldFlags='multiline')
 
-    c.drawString(note_pos_x, note_pos_y, 'Note:')
-    form.textfield(name='note', tooltip='Entrer votre note ici',
-                   x=note_pos_x, y=note_pos_y - 55, width=400, height=50)
+def merge_pdfs(pdf1_path, pdf2_path, output_path):
+    """
+    Merge two PDF files into one. The first page of the resulting PDF will be from pdf1 and the second page from pdf2.
+    
+    Parameters:
+    - pdf1_path: str, path to the first PDF file
+    - pdf2_path: str, path to the second PDF file
+    - output_path: str, path to the output PDF file
+    """
+    # Create a PDF writer object
+    pdf_writer = PdfWriter()
+    
+    # Read the first PDF
+    pdf1_reader = PdfReader(pdf1_path)
+    pdf1_page = pdf1_reader.pages[0]  # Assuming we want the first page
+    pdf_writer.add_page(pdf1_page)
+    
+    # Read the second PDF
+    pdf2_reader = PdfReader(pdf2_path)
+    pdf2_page = pdf2_reader.pages[0]  # Assuming we want the first page
+    pdf_writer.add_page(pdf2_page)
+    
+    # Write the merged PDF to the output file
+    with open(output_path, 'wb') as out_pdf:
+        pdf_writer.write(out_pdf)
 
-    c.drawString(tableau_pos_x, tableau_pos_y, 'Notation:')
-    for i in range(num_rows + 1):  # Draw horizontal lines
-        c.line(80, tableau_offset_y - i * 50, 80 + max_cols * 100, tableau_offset_y - i * 50)
-    for i in range(max_cols + 1):  # Draw vertical lines
-        c.line(80 + i * 100, tableau_offset_y, 80 + i * 100, tableau_offset_y - num_rows * 50)
 
-    for i in range(max_cols):
-        for j in range(num_rows):
-            form.textfield(name=f'cell{i}_{j}', tooltip='Entrer votre texte ici',
-                           x=85 + i * 100, y=tableau_offset_y - 45 - j * 50, width=90, height=40, fieldFlags='multiline',
-                           value=str(data[j][i]) if j < len(data) and i < len(data[j]) else "")
-            if j == 0:
-                c.drawString(110 + i * 100, tableau_offset_y + 5, headers[i])  # en-têtes de colonne
-            if i == 0 and j < len(data):
-                wrapped_text = wrap_text(data[j][0], 10)
-                total_lines = len(wrapped_text)
-                offset = (total_lines - 1) * line_height / 2  # Calculer l'offset basé sur le nombre total de lignes
+def add_page_to_pdf(existing_pdf_path, data):
+    """
+    Add a new page to an existing PDF based on the provided data.
+    
+    Parameters:
+    - existing_pdf_path: str, path to the existing PDF file
+    - data: dict, a record containing details about a student
+    """
+    # Determine the parent directory of the existing PDF
+    parent_directory = os.path.dirname(existing_pdf_path)
+    
+    # Step 1: Generate a new PDF using generate_pdf
+    temp_pdf_path = os.path.join(parent_directory, "temp_unique_student_report.pdf")
+    generate_second_page(data, temp_pdf_path)
+    
+    # Step 2: Merge the new PDF with the existing PDF using merge_pdfs
+    merged_pdf_path = os.path.join(parent_directory, "merged_unique_temp_report.pdf")
+    merge_pdfs(existing_pdf_path, temp_pdf_path, merged_pdf_path)
+    
+    if os.path.exists(existing_pdf_path):
+        os.remove(existing_pdf_path)
+    
+    os.rename(merged_pdf_path, existing_pdf_path)
+    
+    # Step 4: Delete the temporary PDF
+    os.remove(temp_pdf_path)
 
-                for idx, line in enumerate(wrapped_text):
-                    y_position = tableau_offset_y - 25 - j * 50 - (idx * line_height) + offset
-                    c.drawString(10, y_position, line)
 
-    c.save()
+
 
 # Utilisation de la fonction
 #create_form('', 'grille.xlsx')
