@@ -858,7 +858,7 @@ class Ui_MainWindow(object):
          
         if filename:
             with open(filename, 'wb') as f:
-                pickle.dump({'refnum': self.refnum, 'dirs': self.surfdirs, 'config' : self.configdir,'supdirs' : self.supdirs, 'teethcount' : self.teethcount, 'maildir' : self.maildir,'dzipfile' : self.dzipfile, 'infodir' : self.infodir }, f) 
+                pickle.dump({'refnum': self.refnum, 'dirs': self.surfdirs, 'config' : self.configdir,'supdirs' : self.supdirs, 'maildir' : self.maildir,'dzipfile' : self.dzipfile, 'infodir' : self.infodir }, f) 
     
     def charge(self):
         fname = QFileDialog.getOpenFileName(None, 'Ouvrir fichier', '/', "Pickle files (*.pkl)")
@@ -870,7 +870,6 @@ class Ui_MainWindow(object):
             self.surfdirs = data['dirs']
             self.configdir = data['config']
             self.supdirs = data['supdirs']
-            self.teethcount = data['teethcount']
             self.maildir = data['maildir']
             if 'infodir' in data:
                 self.infodir = data['infodir']
