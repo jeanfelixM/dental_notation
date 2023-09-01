@@ -1,3 +1,10 @@
+"""
+Created on 05/08/2023
+
+@author: Maestrati Jean-Félix
+"""
+
+
 import cv2
 from PIL import Image, ImageDraw
 import copy
