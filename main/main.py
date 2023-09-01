@@ -114,7 +114,7 @@ def archive_n_compress2(gdir,curdir,base):
             
 def extract_n_store(indirectory):
     with zipfile.ZipFile(indirectory, mode="r") as archive:
-        archive.extractall(path.join(path.dirname(indirectory),"allcalcul")) #ici ou à la ligne dessous , remplacer "allcalcul" par "." et inversement si pb.
+        archive.extractall(path.join(path.dirname(indirectory),".")) #ici ou à la ligne dessous , remplacer "allcalcul" par "." et inversement si pb.
     return path.join(path.dirname(indirectory),"allcalcul") 
 
 def file_to_dict(file_path):

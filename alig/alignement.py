@@ -144,7 +144,14 @@ def select_and_align(pointsFile=None, surfaceFile=None, surfaceFileCut=None):
 
     listnum = np.array(listnum)
     listnum = listnum[np.argsort(listnum[:, 0])]
-    print(listnum)
+    _, unique_indices = np.unique(listnum[:, 0], return_index=True)
+
+    # Utiliser ces indices pour extraire les lignes correspondantes
+    unique_listnum = listnum[unique_indices]
+    
+    print("Voici la liste des uniques translatiosn : " + str(unique_listnum))
+
+    print("voici la liste des translations : " + str(listnum))
 
     print(f"Temps d'exécution : {end - start} secondes")
 
