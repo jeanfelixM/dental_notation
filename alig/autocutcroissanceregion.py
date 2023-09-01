@@ -1,3 +1,10 @@
+"""
+Created on 01/08/2023
+
+@author: Maestrati Jean-Félix
+"""
+
+
 import csv
 from tkinter import Tk, filedialog
 from matplotlib import cm
@@ -16,43 +23,32 @@ from pathlib import Path
 import re
 
 def get_new_prefix(base_prefix="output", output_dir="."):
-    # Pattern pour correspondre au préfixe et au numéro dans le nom du fichier
     pattern = re.compile(rf"{base_prefix}_(\d+)")
 
-    # Parcourir tous les fichiers dans le répertoire spécifié
     max_num = 0
     for path in Path(output_dir).iterdir():
         match = pattern.match(path.stem)
         if match:
-            # Extraire le numéro à partir du nom du fichier et mettre à jour le max_num
             num = int(match.group(1))
             max_num = max(max_num, num)
 
-    # Le nouveau numéro est max_num + 1
     new_num = max_num + 1
 
     return base_prefix #+ "_" + str(new_num)
 
 
 def write_output(new_mesh, meshprep, cercles, ordre,base_prefix="dents", output_dir="."):
-    # Obtenir un préfixe unique
     prefix = get_new_prefix(base_prefix,output_dir)
-
-    # Créer le chemin d'accès complet
     output_dir = Path(output_dir)
     output_path = lambda filename: output_dir / filename
 
-    # Ecrire new_mesh
+
     o3d.io.write_triangle_mesh(str(output_path(f"{prefix}cut.ply")), new_mesh)
-    
-    # Ecrire meshprep
     o3d.io.write_triangle_mesh(str(output_path(f"{prefix}.ply")), meshprep)
     
-    # Ecrire cercles
     with open(str(output_path(f"{prefix}_picked_points.txt")), 'w') as f:
         for j in ordre:
             center = cercles[j]
-            # N'écrire que les coordonnées du centre du cercle, pas le rayon
             f.write("%s %s %s\n" % (center[0], center[1], center[2]))
             
     return str(output_path(f"{prefix}_picked_points.txt")),str(output_path(f"{prefix}.ply")),str(output_path(f"{prefix}cut.ply"))
@@ -165,13 +161,13 @@ def user_pick_points(meshdir):
     return mesh,points
 
 def createPlanePcd(point, normal, size=100.0, resolution=100):
-    # Créer deux vecteurs directionnels dans le plan
+    #deux vecteurs directionnels dans le plan
     dir1 = np.cross(normal, [1, 0, 0]) if np.dot(normal, [1, 0, 0]) < 0.99 else np.cross(normal, [0, 1, 0])
     dir1 = dir1 / np.linalg.norm(dir1)
     dir2 = np.cross(normal, dir1)
     dir2 = dir2 / np.linalg.norm(dir2)
 
-    # Créer un grillage de points dans le plan
+    #grillage de points dans le plan
     points = []
     for i in range(resolution):
         for j in range(resolution):
@@ -290,6 +286,7 @@ def getPointsOrder(points, pointref, aordonne,tolerance = 12,debug= False):
 
 
 def position_finding(meshprep,ninitpoint = 200,shift = 6.55,thickness = 6,complete = False,returnSphere = False,supnormal = np.array([0, 1, 0]),debug=0):
+    #nom de fonction plus trop adapté, il faudrait refactoriser
     #nnpointplane,nnormal = translate_plane(pointonplane,sign*normal,6.2)
     
     #print("nnpointplane = " + str(nnpointplane))

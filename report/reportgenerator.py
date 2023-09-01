@@ -1,3 +1,10 @@
+"""
+Created on 12/08/2023
+
+@author: Maestrati Jean-Félix
+"""
+
+
 from os import path
 from tkinter import Tk, filedialog
 import pandas as pd

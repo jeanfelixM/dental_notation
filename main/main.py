@@ -160,11 +160,9 @@ def shorten_filename(directory):
         # Extrait seulement la première lettre de chaque mot
         new_name = ''.join(word[0] for word in filename.split('_'))
         
-        # Ajoute l'extension de fichier au nouveau nom
         extension = Path(filename).suffix
         new_name += extension
         
-        # Renomme le fichier
         os.rename(os.path.join(directory, filename), os.path.join(directory, new_name))
 
 def extract_ord_number(folder_path):
@@ -204,28 +202,18 @@ def findScreenshots(directory, num):
 
 
 def get_pdf_path(pdf_directory, numero):
-    # Convertir le chemin du dossier en objet Path
     print("On est dans get pdf path et on cherche dans " + str(pdf_directory))
     root_path = Path(pdf_directory)
     
-    # Vérifier si le chemin donné existe et est un dossier
     if not root_path.exists() or not root_path.is_dir():
         print("Le chemin spécifié n'est pas un dossier valide.")
         return ""
     
-    # Parcourir tous les sous-dossiers
     for subdir in root_path.iterdir():
         if subdir.is_dir():
-            # Chercher le dossier "pdf" dans le sous-dossier courant
             pdf_folder = subdir / "pdf"
-            
-            # Vérifier si le dossier "pdf" existe
             if pdf_folder.exists() and pdf_folder.is_dir():
-                
-                # Chercher les fichiers PDF dans le dossier "pdf"
                 for pdf_file in pdf_folder.glob("*.pdf"):
-                    
-                    # Vérifier si le numéro est dans le nom du fichier
                     if str(numero) in pdf_file.name:
                         return str(pdf_file)
     print("Aucun fichier PDF contenant ce numéro n'a été trouvé.")
@@ -262,21 +250,17 @@ def extract_csv_data(file_path, passage='first'):
     Returns:
     - A dictionary containing the relevant data
     """
-    # Load the CSV file
+
     df = pd.read_csv(file_path)
-    
-    # Initialize an empty dictionary to hold the results
     result = {}
     
     if passage == 'first':
-        # Extract only the 'numero_etudiant', 'nom', and 'prénom' columns
         result_df = df[['numero_etudiant', 'nom', 'prénom']].copy()
         
-        # Convert 'numero_etudiant' to int, drop any rows with NaN values in 'numero_etudiant' before conversion
+        # 'numero_etudiant' to int, drop any rows with NaN values in 'numero_etudiant' before conversion
         result_df.dropna(subset=['numero_etudiant'], inplace=True)
         result_df['numero_etudiant'] = result_df['numero_etudiant'].astype(int)
         
-        # Sort by 'numero_etudiant'
         result_df.sort_values(by='numero_etudiant', inplace=True)
         
         result['students'] = result_df.to_dict(orient='records')
@@ -292,11 +276,10 @@ def extract_csv_data(file_path, passage='first'):
         # Include 'numero_etudiant' for record matching and drop other unnecessary columns
         df_result = df[['numero_etudiant', 'note'] + list(df.columns[4:])].copy()
         
-        # Convert 'numero_etudiant' to int, drop any rows with NaN values in 'numero_etudiant' before conversion
+        # 'numero_etudiant' to int, drop any rows with NaN values in 'numero_etudiant' before conversion
         df_result.dropna(subset=['numero_etudiant'], inplace=True)
         df_result['numero_etudiant'] = df_result['numero_etudiant'].astype(int)
         
-        # Sort by 'numero_etudiant'
         df_result.sort_values(by='numero_etudiant', inplace=True)
         
         result = df_result.to_dict(orient='records')
@@ -330,14 +313,10 @@ def get_max_student_number(csv_path):
     - int, maximum student number in the CSV file, returns None if the column is not found or the data is invalid
     """
     try:
-        # Load the CSV file into a DataFrame
         df = pd.read_csv(csv_path)
-        
-        # Find and return the maximum 'numero_etudiant'
         max_num = df['numero_etudiant'].max()
         return int(max_num) if not pd.isna(max_num) else None
     except KeyError:
-        # Return None if 'numero_etudiant' column is not found
         return None
 
 
@@ -369,27 +348,22 @@ def read_config(file_path):
 
 
 def send_emails(csv_file, username, password, smtp_server, smtp_port, pdf_directory):
-    # Lire le fichier CSV
     df = pd.read_csv(csv_file)
 
-    # Vérifiez si il y a un problème avec le fichier de configuration
     if None in (username, password, smtp_server, smtp_port):
         print("Erreur lors de la lecture du fichier de configuration.")
         return
 
-    # Connexion au serveur de messagerie
     server = smtplib.SMTP(smtp_server, smtp_port)
     server.starttls()  # Enlevez cette ligne si vous utilisez SSL
     server.login(username, password)
 
-    # Parcourir les lignes du dataframe
     for index, row in df.iterrows():
         msg = MIMEMultipart()
         msg['From'] = username
         msg['To'] = row['email']
         msg['Subject'] = 'Evaluation TP Dent'
 
-        # Attacher le fichier PDF
         filename = get_pdf_path(pdf_directory, row['numéro'])
         with open(filename, 'rb') as f:
             part = MIMEBase('application', 'octet-stream')
@@ -398,14 +372,12 @@ def send_emails(csv_file, username, password, smtp_server, smtp_port, pdf_direct
         part.add_header('Content-Disposition', 'attachment; filename="{}"'.format(os.path.basename(filename)))
         msg.attach(part)
 
-        # Envoyer l'email
         server.send_message(msg)
 
-    # Fermer la connexion au serveur de messagerie
     server.quit()
 
 def batchstart(dirs,noise,objectkernel,deformkernel,numref=[1]):
-    #alignement (faire un mode manuel (exactement comment c fait maintenant) et un mode semi auto (coupure automatique juste faut 3 points manuel))
+    print("Début des batchs ...")
     
     genedir = path.dirname(dirs[0][1])
     for (pointsFile, surfaceFile, surfaceFileCut), refn in zip(dirs, numref):
