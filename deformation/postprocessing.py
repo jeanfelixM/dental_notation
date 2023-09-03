@@ -130,7 +130,6 @@ def currentTeethInd(direname):
         return -1
 
 def take_screenshot(pointsBase,facesBase,scalarsBase, base, output_directory):
-    print("a")
 
     pb = np.array(pointsBase)
     fb = np.array(facesBase)
@@ -153,7 +152,6 @@ def take_screenshot(pointsBase,facesBase,scalarsBase, base, output_directory):
     # Add the scalars to the mesh
     pyvista_mesh['scalars'] = sb
 
-    print("Avant plotter creation")
     # Create a plotter object
     plotter = pv.Plotter(off_screen=True)
 
@@ -166,14 +164,12 @@ def take_screenshot(pointsBase,facesBase,scalarsBase, base, output_directory):
     plotter.camera.zoom(zf)
     plotter.render()
 
-    print("Avant camera position")
     # Set camera to the -Z position
     plotter.camera_position = 'xy'
     plotter.camera.zoom(zf)
     plotter.render()
     img = plotter.screenshot()
 
-    print("Avant imageio")
     # Save the screenshot to a file
     imageio.imsave(path.join(output_directory, base + '_occlusal.png'), img)
 
