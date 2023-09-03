@@ -655,7 +655,7 @@ class Ui_MainWindow(object):
             self.surfdirs.append((pointspic,surface,surfacecut))
             self.update_surf_list(pointspic,surface,surfacecut)
         self.start1.setEnabled(True)
-        if self.thenalign.isChecked():
+        if self.thenalign.isChecked() and self.surfdirs is not None and (self.surfdirs and len(self.surfdirs) > 0):
             self.start_alig()
         
     def on_calculation_finished(self,path):
