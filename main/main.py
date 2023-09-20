@@ -459,6 +459,7 @@ def batchend(zipdir,refnum,infodir):
 def fullautocut(dirs,points,debug):
     paths = []
     for i, (d, (points, normal, ref)) in enumerate(zip(dirs, points)):
+        print("Autocut du support " + str(i+1) + " ...")
         od = path.dirname(d)
         bn = path.basename(d)
         base = path.splitext(bn)[0]
@@ -467,10 +468,18 @@ def fullautocut(dirs,points,debug):
         
         #final_prefix = f"{genprefix}_ord{i}_"
         final_prefix = genprefix
-        mesh = o3d.io.read_triangle_mesh(d)
+        print("Avant read triangle")
+        print("On va read " + str(d))
+        try:
+            mesh = o3d.io.read_triangle_mesh(d)
+        except Exception as e:
+            print("Erreur lors de la lecture du fichier " + str(d))
+            print(e)
+            continue
+        print("Avant autocut")
         rpath = autocut(mesh=mesh,points=points,up=normal,pointref=ref,debug=debug,base_prefix=final_prefix,output_dir=od)
         paths.append(rpath)
-    print("Autocut terminé...")
+    print("Autocuts terminé...")
     return paths
         
 def sendmail(configdir,maildir,prepdfdir):

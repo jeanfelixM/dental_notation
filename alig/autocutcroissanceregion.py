@@ -396,6 +396,7 @@ def normalize(values):
 
 def autocut(mesh=None,points=None,pointref=None,up=[0,1,0],debug=0,base_prefix="dents",output_dir="."):
     if (not points) or (not mesh):
+        print("Aucun mesh ou points fournis, on demande à l'utilisateur de les sélectionner")
         try:
             meshdir,pointsdir= user_select_files()
         except ValueError:
