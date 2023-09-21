@@ -106,7 +106,7 @@ class SecondCalculationThread(QThread):
         self.infodir = infodir
     
     def run(self):
-        # intensive calculation here
+        # intensive calculation heretttw
         p = batchend(self.dzipfile,self.refnum,self.infodir)
         # After the calculation, emit the finished signal
         self.calculation_finished.emit(p)
@@ -654,6 +654,7 @@ class Ui_MainWindow(object):
         for pointspic,surface,surfacecut in paths:
             self.surfdirs.append((pointspic,surface,surfacecut))
             self.update_surf_list(pointspic,surface,surfacecut)
+        self.refnum += [self.refsurfselect.value()]*len(self.surfdirs)
         self.start1.setEnabled(True)
         if self.thenalign.isChecked() and self.surfdirs is not None and (self.surfdirs and len(self.surfdirs) > 0):
             self.start_alig()

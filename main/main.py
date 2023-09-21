@@ -448,8 +448,9 @@ def batchend(zipdir,refnum,infodir):
         #create pdf
         try:
             create_pdf(subfolder,curnum=currCount,infodir=infodir,n= count_vtk_files(Path(path.join(subfolder,"surfaces"))) )
-        except:
+        except Exception as e:
             print("Erreur lors de la création du PDF")
+            print(e)
         
         currCount += count_vtk_files(Path(path.join(subfolder,"surfaces"))) - 1
         

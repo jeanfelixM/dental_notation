@@ -37,21 +37,47 @@ def get_new_prefix(base_prefix="output", output_dir="."):
     return base_prefix #+ "_" + str(new_num)
 
 
-def write_output(new_mesh, meshprep, cercles, ordre,base_prefix="dents", output_dir="."):
-    prefix = get_new_prefix(base_prefix,output_dir)
+def write_output(new_mesh, meshprep, cercles, ordre, base_prefix="dents", output_dir="."):
+    prefix = get_new_prefix(base_prefix, output_dir)
     output_dir = Path(output_dir)
     output_path = lambda filename: output_dir / filename
 
+    # Créer des fichiers vides
+    for file_name in [f"{prefix}cut.ply", f"{prefix}.ply", f"{prefix}_picked_points.txt"]:
+        empty_file_path = str(output_path(file_name))
+        with open(empty_file_path, 'w') as f:
+            pass
 
-    o3d.io.write_triangle_mesh(str(output_path(f"{prefix}cut.ply")), new_mesh)
-    o3d.io.write_triangle_mesh(str(output_path(f"{prefix}.ply")), meshprep)
-    
-    with open(str(output_path(f"{prefix}_picked_points.txt")), 'w') as f:
-        for j in ordre:
-            center = cercles[j]
-            f.write("%s %s %s\n" % (center[0], center[1], center[2]))
-            
-    return str(output_path(f"{prefix}_picked_points.txt")),str(output_path(f"{prefix}.ply")),str(output_path(f"{prefix}cut.ply"))
+    try:
+        # Essayer d'écrire le fichier new_mesh
+        if o3d.io.write_triangle_mesh(str(output_path(f"{prefix}cut.ply")), new_mesh):
+            print(f"Écriture réussie de {prefix}cut.ply")
+        else:
+            print(f"Échec de l'écriture de {prefix}cut.ply")
+    except Exception as e:
+        print(f"Une erreur s'est produite lors de l'écriture de {prefix}cut.ply : {e}")
+
+    try:
+        # Essayer d'écrire le fichier meshprep
+        if o3d.io.write_triangle_mesh(str(output_path(f"{prefix}.ply")), meshprep):
+            print(f"Écriture réussie de {prefix}.ply")
+        else:
+            print(f"Échec de l'écriture de {prefix}.ply")
+    except Exception as e:
+        print(f"Une erreur s'est produite lors de l'écriture de {prefix}.ply : {e}")
+
+    try:
+        # Essayer d'écrire le fichier texte
+        with open(str(output_path(f"{prefix}_picked_points.txt")), 'w') as f:
+            for j in ordre:
+                center = cercles[j]
+                f.write("%s %s %s\n" % (center[0], center[1], center[2]))
+        print(f"Écriture réussie de {prefix}_picked_points.txt")
+    except Exception as e:
+        print(f"Une erreur s'est produite lors de l'écriture de {prefix}_picked_points.txt : {e}")
+
+    return str(output_path(f"{prefix}_picked_points.txt")), str(output_path(f"{prefix}.ply")), str(output_path(f"{prefix}cut.ply"))
+
 
 
 
